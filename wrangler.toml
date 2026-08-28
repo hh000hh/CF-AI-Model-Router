@@ -1,0 +1,15 @@
+name = "cf-ai"
+main = "src/index.js"
+compatibility_date = "2026-06-23"
+
+[[kv_namespaces]]
+binding = "COST_KV"
+id = "d97620ec271344008e8663b558fb42b8"
+
+[[kv_namespaces]]
+binding = "SYMBOL_CACHE"
+id = "7854a0decec94401aa78eea8d5301952"
+
+[[r2_buckets]]
+binding = "IMAGES_BUCKET"
+bucket_name = "images"
