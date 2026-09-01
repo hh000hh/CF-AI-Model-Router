@@ -1,59 +1,3 @@
-async function streamResponse(
-  env,
-  model,
-  messages,
-  temperature,
-  max_tokens
-) {
-
-  try {
-
-    const aiStream =
-      await env.AI.run(
-        model,
-        {
-          messages,
-          temperature,
-          max_tokens,
-          stream: true
-        }
-      )
-
-    console.error(
-      "STREAM_TYPE=",
-      typeof aiStream
-    )
-
-    console.error(
-      "STREAM_CONSTRUCTOR=",
-      aiStream?.constructor?.name
-    )
-
-    return new Response(
-      aiStream,
-      {
-        headers: {
-          "Content-Type":
-            "text/event-stream; charset=utf-8",
-          "Cache-Control":
-            "no-cache",
-          "Connection":
-            "keep-alive"
-        }
-      }
-    )
-
-  } catch (e) {
-
-    console.error(
-      "Stream Error:",
-      e
-    )
-
-    throw e
-  }
-}
-
 const signedUrlCache =
   new Map();
 
@@ -61,8 +5,30 @@ export default {
   async fetch(request, env) {
     try {
 
+      const url =
+        new URL(request.url);
+
+      console.error(
+        "IP=" +
+        (request.headers.get("cf-connecting-ip") || "")
+      );
+
+      console.error(
+        "UA=" +
+        (request.headers.get("user-agent") || "")
+      );
+
+      console.error(
+        "PATH=" + url.pathname
+      );
+
+      console.error(
+        "METHOD=" +
+        request.method
+      );
+
       const MODELS =
-        getModels(env)
+        getModels(env);
 
       const MODEL_COST =
         getModelCost(env)
@@ -90,12 +56,17 @@ export default {
         )
       }
 
-      const url =
-        new URL(request.url)
-
       // =====================
       // Models
       // =====================
+
+      if (url.pathname === "/api/show") {
+        return json({
+          name: "cf-ai-router",
+          modified_at: new Date().toISOString(),
+          details: {}
+        });
+      }
 
       if (url.pathname === "/v1/models") {
         return json({
@@ -295,48 +266,66 @@ export default {
           6000
         );
 
+      // =============================
+      // 先检查 Hermes 请求
+      // =============================
+
+      const originalLastUser =
+        [...trimmedMessages]
+          .reverse()
+          .find(
+            m => m.role === "user"
+          );
+
       const continuePatterns =
-        (env.HERMES_CONTINUE_KEYWORDS || "")
-          .split("\n")
-          .map(v => v.trim())
+        String(
+          env.HERMES_CONTINUE_KEYWORDS || ""
+        )
+          .split(/[\n,;]/)
+          .map(v =>
+            v.trim().toLowerCase()
+          )
           .filter(Boolean);
 
-      trimmedMessages =
-        trimmedMessages.filter(m => {
+      const originalText =
+        String(
+          originalLastUser?.content || ""
+        )
+          .toLowerCase()
+          .trim();
 
-          if (m.role !== "user") {
-            return true;
-          }
+      console.error(
+        "ORIGINAL_TEXT=" +
+        originalText
+      );
 
-          const text =
-            typeof m.content === "string"
-              ? m.content
-              : "";
+      console.error(
+        "CONTINUE_KEYWORDS=" +
+        JSON.stringify(
+          continuePatterns
+        )
+      );
 
-          const blocked =
-            continuePatterns.some(
-              p => text.includes(p)
-            );
-
-          return !blocked;
-
-        });
-
-      const query =
-        getSearchQuery(
-          trimmedMessages
+      const matchedPatterns =
+        continuePatterns.filter(
+          p =>
+            originalText.includes(p)
         );
 
-      const cleanMessages =
-        trimmedMessages.filter(
-          m => m.role !== "system"
-        );
+      console.error(
+        "CONTINUE_MATCHED=" +
+        JSON.stringify(
+          matchedPatterns
+        )
+      );
+
+      console.error(
+        "ORIGINAL_LAST_USER=" +
+        JSON.stringify(originalLastUser)
+      );
 
       const isContinue =
-        isHermesContinuePrompt(
-          query,
-          env
-        );
+        matchedPatterns.length > 0;
 
       console.error(
         "HERMES_CONTINUE=" +
@@ -346,7 +335,32 @@ export default {
       if (isContinue) {
 
         console.error(
+          "HERMES_CONTINUE_STREAM=" +
+          stream
+        );
+
+        console.error(
+          "HERMES_CONTINUE_REQUEST=" +
+          JSON.stringify(body)
+        );
+
+        console.error(
           "HERMES_CONTINUE_BLOCKED"
+        );
+
+        if (stream) {
+
+          console.error(
+            "HERMES_CONTINUE_STREAM_RETURN"
+          );
+
+          return sseText(
+            "Nothing to save."
+          );
+        }
+
+        console.error(
+          "HERMES_CONTINUE_JSON_RETURN"
         );
 
         return jsonOpenAI(
@@ -355,9 +369,60 @@ export default {
         );
       }
 
-      // =====================
-      // Hermes Image Summary
-      // =====================
+
+      // =============================
+      // 再过滤消息
+      // =============================
+
+      trimmedMessages =
+        trimmedMessages.filter(m => {
+
+          if (m.role !== "user") {
+            return true;
+          }
+
+          const text =
+            String(
+              m.content || ""
+            ).toLowerCase();
+
+          const blocked =
+            continuePatterns.some(
+              p =>
+                text.includes(p)
+            );
+
+          return !blocked;
+
+        });
+
+      // =============================
+      // 正常流程
+      // =============================
+
+      const query =
+        getSearchQuery(
+          trimmedMessages
+        );
+
+      console.error(
+        "QUERY_RAW=" +
+        query
+      );
+
+      const cleanMessages =
+        trimmedMessages
+          .filter(
+            m =>
+              m.role !== "system"
+          )
+          .slice(-20);
+
+      console.error(
+        "CLEAN_MESSAGE_COUNT=" +
+        cleanMessages.length
+      );
+
       // =====================
       // Hermes Image Summary
       // =====================
@@ -545,7 +610,7 @@ export default {
       max_tokens =
         Math.min(
           max_tokens,
-          16000
+          2048
         )
 
       // =====================
@@ -1018,9 +1083,11 @@ export default {
             )
 
           const cleanMessages =
-            normalizedMessages.filter(
-              m => m.role !== "system"
-            );
+            normalizedMessages
+              .filter(
+                m => m.role !== "system"
+              )
+              .slice(-20);
 
           const shortQuery =
             query.trim()
@@ -1083,6 +1150,11 @@ export default {
 
               rankedResults =
                 searchData.results || []
+
+              console.error(
+                "RANKED_RESULTS_COUNT=" +
+                rankedResults.length
+              );
 
             } catch (e) {
 
@@ -1201,6 +1273,17 @@ ${searchContext}
 
             ...cleanMessages
           ];
+
+          console.error(
+            "RUNTIME_MESSAGE_COUNT=" +
+            runtimeMessages.length
+          );
+
+          console.error(
+            "PROMPT_SIZE=" +
+            JSON.stringify(runtimeMessages)
+              .length
+          );
 
           if (
             JSON.stringify(
@@ -1841,6 +1924,15 @@ ${symbol} `
 
           let needSearch = false
 
+          console.error(
+            "QUERY=" + query
+          );
+
+          console.error(
+            "NEED_SEARCH=" +
+            needSearch
+          );
+
           if (
 
             !hasImage &&
@@ -1895,6 +1987,25 @@ ${symbol} `
             /新闻|消息|动态|最新|最近|news/i
               .test(query)
 
+          console.error(
+            "QUERY=" + query
+          );
+
+          console.error(
+            "NEED_SEARCH=" +
+            needSearch
+          );
+
+          console.error(
+            "IS_NEWS=" +
+            isNewsQuery
+          );
+
+          console.error(
+            "RANKED_RESULTS=" +
+            rankedResults.length
+          );
+
           logPreview(
             "SEARCH PREVIEW:",
             searchContext,
@@ -1905,57 +2016,80 @@ ${symbol} `
           // News Direct Return
           // =====================
 
-          if (
-            isNewsQuery &&
+          console.error(
+            "RANKED_RESULTS=" +
             rankedResults.length
-          ) {
+          );
 
-            const newsText =
-              formatNewsResults(
-                rankedResults
-              )
+          console.error(
+            "NEWS_GATE=" +
+            JSON.stringify({
+              isNewsQuery,
+              resultCount:
+                rankedResults.length
+            })
+          );
 
-            if (stream) {
-              return sseText(
-                newsText
-              )
+          if (isNewsQuery) {
+
+            console.error(
+              "NEWS_STREAM=" + stream
+            );
+
+            if (rankedResults.length > 0) {
+              const newsText = formatNewsResults(rankedResults);
+              if (stream) {
+                console.error(
+                  "NEWS_DIRECT_STREAM_RETURN"
+                );
+
+                console.error(
+                  "NEWS_TEXT_LENGTH=" +
+                  newsText.length
+                );
+
+                return sseText(newsText);
+              }
+
+              return jsonOpenAI(newsText, requestedModel);
             }
 
-            return jsonOpenAI(
-              newsText,
-              requestedModel
-            )
-
+            else {
+              console.error("NEWS_GATE_BLOCKED: News keyword matched but results array is empty.");
+              const fallbackText = "📰 实时新闻聚合服务暂不可用，请稍后再试或换个关键词提问（例如：输入特定的公司或行业加新闻）。";
+              if (stream) { return sseText(fallbackText); }
+              return jsonOpenAI(fallbackText, requestedModel);
+            }
           }
 
           const systemPrompt = `
 ${getCurrentDatePrompt().content}
 
-            IMPORTANT:
+          IMPORTANT:
 
 Tool calling is NOT available.
 
 Do NOT output:
 
-            <tool_call>
-            </tool_call>
+          <tool_call>
+          </tool_call>
 
-            web_search(
-              vision_analyze(
-                skill_view(
-                  memory(
-                    terminal(
+          web_search(
+            vision_analyze(
+              skill_view(
+                memory(
+                  terminal(
 
-                      The search has already been completed when needed.
+                    The search has already been completed when needed.
 
 Answer the user directly.
 
 If search results are provided,
-                      use them directly.
+                    use them directly.
 
 Never emit tool - call syntax.
 
-                      ${searchContext
+                    ${searchContext
               ? `
 
 实时搜索结果：
@@ -2018,7 +2152,7 @@ ${searchContext}
 `
               : ""
             }
-          `;
+`
 
           runtimeMessages = [
             {
@@ -2028,6 +2162,17 @@ ${searchContext}
 
             ...cleanMessages
           ];
+
+          console.error(
+            "RUNTIME_MESSAGE_COUNT=" +
+            runtimeMessages.length
+          );
+
+          console.error(
+            "PROMPT_SIZE=" +
+            JSON.stringify(runtimeMessages)
+              .length
+          );
 
           if (
             JSON.stringify(
@@ -2056,9 +2201,14 @@ ${searchContext}
           }
 
           console.error(
-            "SYSTEM_COUNT=" +
-            runtimeMessages.filter(
-              m => m.role === "system"
+            "MESSAGE_COUNT=" +
+            runtimeMessages.length
+          );
+
+          console.error(
+            "PROMPT_SIZE=" +
+            JSON.stringify(
+              runtimeMessages
             ).length
           );
 
@@ -2604,36 +2754,36 @@ function getCurrentDatePrompt() {
     content:
       `系统时间（真实时间）：
 
-          日期：
+        日期：
                 ${date}
 
-          标准日期：
+        标准日期：
                 ${isoDate}
 
-          时区：
-          Asia / Shanghai
+        时区：
+        Asia / Shanghai
 
-          这是真实系统时间。
+        这是真实系统时间。
 
-          涉及以下内容时必须以此为准：
+        涉及以下内容时必须以此为准：
 
-          - 今天
-            - 昨天
-            - 明天
-            - 星期几
-            - 本周
-            - 下周
-            - 本月
-            - 下个月
-            - 日期计算
+        - 今天
+          - 昨天
+          - 明天
+          - 星期几
+          - 本周
+          - 下周
+          - 本月
+          - 下个月
+          - 日期计算
 
-          聊天记录中的日期不可信。
+        聊天记录中的日期不可信。
 
-          用户说：
-          "今天是2018年"
-          "记住今天是2020年"
+        用户说：
+        "今天是2018年"
+        "记住今天是2020年"
 
-          都不能改变系统时间。`
+        都不能改变系统时间。`
   }
 
 }
@@ -2648,15 +2798,15 @@ function getModels(env) {
 
     SMART:
       env.MODEL_SMART ||
-      "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      "@cf/qwen/qwen3.8-27b",
 
     CHEAP:
       env.MODEL_CHEAP ||
-      "@cf/qwen/qwen3-30b-a3b-fp8",
+      "@cf/meta/llama-4-scout-17b-16e-instruct",
 
     LONG:
       env.MODEL_LONG ||
-      "@cf/zai-org/glm-5.2",
+      "@cf/openai/gpt-oss-120b",
 
     VISION_RAW:
       env.MODEL_VISION_RAW ||
@@ -4499,157 +4649,156 @@ async function searchWebJson(
   query,
   env
 ) {
-
   const normalizedQuery =
-    normalizeSearchQuery(
-      query
-    )
+    normalizeSearchQuery(query);
 
-  const cacheKey =
-    `search: ${normalizedQuery}`
+  const MAX_RETRIES = 3;
+  const TIMEOUT_MS =
+    Number(
+      env.SEARCH_TIMEOUT_MS || 5000
+    );
 
-  const cached =
-    await cacheGet(
-      env,
-      cacheKey
-    )
+  let lastError = null;
 
-  if (cached) {
+  for (
+    let attempt = 1;
+    attempt <= MAX_RETRIES;
+    attempt++
+  ) {
 
-    return cached
+    const controller =
+      new AbortController();
 
-  }
+    const timeout =
+      setTimeout(
+        () => controller.abort(),
+        TIMEOUT_MS
+      );
 
-  const controller =
-    new AbortController()
+    try {
 
-  const timeout =
-    setTimeout(
-      () =>
-        controller.abort(),
-      Number(
-        env.SEARCH_TIMEOUT_MS || 5000
-      )
-    )
+      console.error(
+        `[SERPER_START] query="${normalizedQuery}" attempt=${attempt}`
+      );
 
-  try {
-
-    const searchBase =
-      String(
-        env.SEARCH_URL || ""
-      )
-        .trim()
-        .replace(/\/+$/, "")
-
-    let url =
-      `${searchBase}/search` +
-      `?q=${encodeURIComponent(query)}` +
-      `&format=json` +
-      `&language=en-US` +
-      `&safesearch=0`
-
-    if (
-      env.SEARCH_ENGINES
-    ) {
-
-      url +=
-        `& engines=${encodeURIComponent(
-          env.SEARCH_ENGINES
-        )
-        }`
-
-    }
-
-    const resp =
-      await fetch(
-        url,
+      const resp = await fetch(
+        "https://google.serper.dev/search",
         {
+          method: "POST",
           headers: {
-            Accept:
+            "X-API-KEY":
+              env.SP_API_KEY,
+            "Content-Type":
               "application/json"
           },
+          body: JSON.stringify({
+            q: normalizedQuery
+          }),
           signal:
             controller.signal
         }
-      )
+      );
 
-    clearTimeout(
-      timeout
-    )
-
-    if (!resp.ok) {
+      clearTimeout(timeout);
 
       console.error(
-        "SEARCH JSON STATUS:",
-        resp.status
-      )
+        `[SERPER_STATUS] ${resp.status}`
+      );
 
-      return []
+      if (!resp.ok) {
+        throw new Error(
+          `HTTP_${resp.status}`
+        );
+      }
+
+      const data =
+        await resp.json();
+
+      const organic =
+        Array.isArray(
+          data?.organic
+        )
+          ? data.organic
+          : [];
+
+      const results =
+        organic.map(item => ({
+          url:
+            item?.link || "",
+          title:
+            item?.title || "",
+          content:
+            item?.snippet || "",
+          publishedDate:
+            item?.date || ""
+        }));
+
+      const seen =
+        new Set();
+
+      const filtered =
+        results.filter(item => {
+
+          const url =
+            item.url?.trim();
+
+          if (!url) {
+            return false;
+          }
+
+          if (
+            seen.has(url)
+          ) {
+            return false;
+          }
+
+          seen.add(url);
+
+          return true;
+        });
+
+      console.error(
+        `SERPER_RESULTS=${filtered.length}`
+      );
+
+      return filtered;
+
+    } catch (e) {
+
+      clearTimeout(timeout);
+
+      lastError =
+        e?.message ||
+        String(e);
+
+      console.error(
+        `[SERPER_FAIL] attempt=${attempt} reason=${lastError}`
+      );
+
+      if (
+        attempt <
+        MAX_RETRIES
+      ) {
+
+        await new Promise(
+          resolve =>
+            setTimeout(
+              resolve,
+              200
+            )
+        );
+
+      }
 
     }
 
-    const data =
-      await resp.json()
-
-    const results =
-      Array.isArray(
-        data.results
-      )
-        ? data.results
-        : []
-
-    const seen =
-      new Set()
-
-    const filtered =
-      results.filter(
-        r => {
-
-          const resultUrl =
-            r.url || ""
-
-          if (
-            !resultUrl ||
-            seen.has(resultUrl)
-          ) {
-
-            return false
-
-          }
-
-          seen.add(
-            resultUrl
-          )
-
-          return true
-
-        }
-      )
-
-    await cachePut(
-      env,
-      cacheKey,
-      filtered,
-      1800
-    )
-
-    return filtered
-
-  } catch (e) {
-
-    clearTimeout(
-      timeout
-    )
-
-    console.error(
-      "SEARCH JSON ERROR:",
-      e?.message || e
-    )
-
-    return []
-
   }
 
+  console.error(
+    `[SERPER_FATAL] ${lastError}`
+  );
+
+  return [];
 }
 
 async function searchWeb(
@@ -4660,44 +4809,46 @@ async function searchWeb(
   const normalizedQuery =
     normalizeSearchQuery(
       query
-    )
+    );
 
-  const cacheKey =
-    `web: ${normalizedQuery}`
-
-  const cached = null
-
-  if (cached) {
-
-    return cached
-
-  }
+  console.error(
+    `SEARCH_QUERY=${normalizedQuery}`
+  );
 
   try {
 
     const results =
       await searchWebJson(
-        query,
+        normalizedQuery,
         env
-      )
+      );
 
     if (
-      !results ||
-      !results.length
+      !Array.isArray(results) ||
+      results.length === 0
     ) {
+
+      console.error(
+        "SEARCH_EMPTY"
+      );
 
       return {
         context: "",
         results: []
-      }
+      };
 
     }
 
     const rankedResults =
       rankSearchResults(
         results,
-        query
-      )
+        normalizedQuery
+      );
+
+    console.error(
+      "RANKED_RESULTS=" +
+      rankedResults.length
+    );
 
     const maxResults =
       Math.min(
@@ -4705,80 +4856,75 @@ async function searchWeb(
           env.SEARCH_MAX_RESULTS || 5
         ),
         10
-      )
+      );
 
     const context =
       rankedResults
-        .slice(0, maxResults)
-        .map((r, index) =>
+        .slice(
+          0,
+          maxResults
+        )
+        .map(
+          (
+            r,
+            index
+          ) =>
 
-          `[${index + 1}]
+            `[${index + 1}]
 
-        Title:
+Title:
 ${(r.title || "")
-            .replace(/\s+/g, " ")
-            .slice(0, 200)
-          }
+              .replace(/\s+/g, " ")
+              .slice(0, 200)}
 
-        Snippet:
+Snippet:
 ${(r.content || "")
-            .replace(/\s+/g, " ")
-            .slice(0, 500)
-          }
+              .replace(/\s+/g, " ")
+              .slice(0, 500)}
 
-        URL:
+URL:
 ${r.url || ""}
 
-        Date:
-${r.publishedDate || ""}
-        `
+Date:
+${r.publishedDate || ""}`
         )
-        .join("\n\n")
+        .join("\n\n");
 
     const finalContext =
       context.length > 3000
-        ? context.slice(0, 3000)
-        : context
+        ? context.slice(
+          0,
+          3000
+        )
+        : context;
 
-    const ttl =
-      getSearchCacheTTL(
-        query
-      )
-
-    if (
-      !shouldSkipCache(
-        finalContext,
-        env
-      )
-    ) {
-
-      await cachePutText(
-        env,
-        cacheKey,
-        finalContext,
-        ttl
-      );
-
-    } else {
-
-    }
+    console.error(
+      "SEARCH_CONTEXT_LENGTH=" +
+      finalContext.length
+    );
 
     return {
-      context: finalContext,
-      results: rankedResults
-    }
+      context:
+        finalContext,
+      results:
+        rankedResults
+    };
 
   } catch (e) {
 
     console.error(
-      "SEARCH ERROR:",
-      e?.message || e
-    )
+      "SEARCH_ERROR=" +
+      (
+        e?.stack ||
+        e?.message ||
+        e
+      )
+    );
 
     return {
       context: "",
       results: []
-    }
+    };
 
   }
 
@@ -5502,95 +5648,6 @@ async function cachePut(
 
 }
 
-function getSearchCacheTTL(
-  query
-) {
-
-  query =
-    String(query || "")
-      .toLowerCase()
-
-  if (
-    /股价|股票|行情|stock|ticker|nasdaq|nyse/i
-      .test(query)
-  ) {
-    return 300
-  }
-
-  if (
-    /新闻|news|breaking|latest/i
-      .test(query)
-  ) {
-    return 900
-  }
-
-  if (
-    /天气|weather/i
-      .test(query)
-  ) {
-    return 600
-  }
-
-  return 1800
-
-}
-
-async function cachePutText(
-  env,
-  key,
-  value,
-  ttl = 3600
-) {
-
-  try {
-
-    await env.SYMBOL_CACHE.put(
-      key,
-      value,
-      {
-        expirationTtl: ttl
-      }
-    )
-
-  } catch (e) {
-
-    console.error(
-      "CACHE PUT ERROR:",
-      e
-    )
-
-  }
-
-}
-
-function shouldSkipCache(
-  text,
-  env
-) {
-
-  const patterns =
-    (env.CACHE_SKIP_PATTERNS || "")
-      .split("\n")
-      .map(v => v.trim().toLowerCase())
-      .filter(Boolean);
-
-  const content =
-    String(text || "")
-      .toLowerCase();
-
-  const blocked =
-    patterns.some(
-      p => content.includes(p)
-    );
-
-  if (blocked) {
-
-  }
-
-  return blocked;
-
-}
-
 // =====================
 // Stock Service
 // =====================
@@ -5884,6 +5941,11 @@ async function searchSymbolFromWeb(
         `${company} stock ticker symbol NASDAQ NYSE`,
         env
       );
+
+    console.error(
+      "WEB_RESULTS=" +
+      JSON.stringify(results)
+    );
 
     const candidates = [];
 
@@ -6534,10 +6596,6 @@ async function searchSymbol(
 ) {
 
   console.error(
-    "SEARCH_SYMBOL_ENTER"
-  );
-
-  console.error(
     "SEARCH_SYMBOL_QUERY=" +
     query
   );
@@ -6683,19 +6741,14 @@ async function searchSymbol(
   // =====================
 
   if (
-    /^[A-Z]{1,5}$/.test(
-      upper
-    ) &&
-    keyword === upper
+    /^[A-Za-z]{1,5}$/.test(keyword)
   ) {
-
     console.error(
       "DIRECT_US_SYMBOL=" +
       upper
     );
 
     return upper;
-
   }
 
   // =====================
@@ -6708,7 +6761,12 @@ async function searchSymbol(
       keyword
     );
 
-  if (isChinese) {
+  if (
+    isChinese &&
+    !/[A-Za-z]/.test(
+      keyword
+    )
+  ) {
 
     console.error(
       "SKIP_WEB_SYMBOL_SEARCH_CHINESE"
@@ -8231,52 +8289,65 @@ function isHermesContinuePrompt(
   env
 ) {
 
-  if (
-    !query ||
-    typeof query !== "string"
-  ) {
+  if (!query) {
+    console.error(
+      "CONTINUE_QUERY_EMPTY"
+    );
     return false;
   }
 
   const text =
-    query
+    String(query)
       .toLowerCase()
       .trim();
 
   const keywords =
-    (
-      env.HERMES_CONTINUE_KEYWORDS ||
-      ""
+    String(
+      env.HERMES_CONTINUE_KEYWORDS || ""
     )
-      .split("\n")
-      .map(v => v.trim())
+      .split(/[\n,;]/)
+      .map(v =>
+        v.trim().toLowerCase()
+      )
       .filter(Boolean);
 
-  if (!keywords.length) {
-    return false;
-  }
+  const matched =
+    keywords.filter(
+      keyword =>
+        text.includes(keyword)
+    );
 
-  let hit = 0;
+  console.error(
+    "CONTINUE_QUERY=" +
+    text.slice(0, 1000)
+  );
 
-  for (const keyword of keywords) {
+  console.error(
+    "CONTINUE_ENV=" +
+    String(
+      env.HERMES_CONTINUE_KEYWORDS || ""
+    )
+  );
 
-    if (
-      text.includes(
-        keyword.toLowerCase()
-      )
-    ) {
+  console.error(
+    "CONTINUE_KEYWORDS=" +
+    JSON.stringify(keywords)
+  );
 
-      hit++;
+  console.error(
+    "CONTINUE_MATCHED=" +
+    JSON.stringify(matched)
+  );
 
-    }
+  const result =
+    matched.length > 0;
 
-  }
+  console.error(
+    "HERMES_CONTINUE_RESULT=" +
+    result
+  );
 
-  const score =
-    hit / keywords.length;
-
-  return score >= 0.8;
-
+  return result;
 }
 
 function isHermesImageSummary(
