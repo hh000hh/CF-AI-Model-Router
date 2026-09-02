@@ -78,22 +78,22 @@ export default {
               owned_by: "ai-router"
             },
             {
-              id: "smart",
+              id: "chat",
               object: "model",
               owned_by: "ai-router"
             },
             {
-              id: "cheap",
+              id: "analyst",
               object: "model",
               owned_by: "ai-router"
             },
             {
-              id: "long",
+              id: "coder",
               object: "model",
               owned_by: "ai-router"
             }
           ]
-        })
+        });
       }
 
       // =====================
@@ -202,21 +202,6 @@ export default {
 
       const stream = body?.stream === true;
 
-      console.error(
-        "REQUEST_MODEL=" +
-        requestedModel
-      );
-
-      console.error(
-        "REQUEST_STREAM=" +
-        stream
-      );
-
-      console.error(
-        "REQUEST_MESSAGE_COUNT=" +
-        (body?.messages?.length || 0)
-      );
-
       const REQUEST_ID =
         crypto.randomUUID();
 
@@ -236,15 +221,6 @@ export default {
       console.error(
         "RAW_HAS_IMAGE=" +
         getImageUrls(messages).length
-      );
-
-      console.error(
-        "BODY_HAS_IMAGE_ARRAY=" +
-        JSON.stringify(
-          body.messages?.filter(
-            m => Array.isArray(m.content)
-          )
-        ).slice(0, 3000)
       );
 
       const last =
@@ -678,46 +654,82 @@ export default {
 
       let model
 
-      switch (
-      requestedModel
-      ) {
+      switch (requestedModel) {
 
-        case "smart":
-          model =
-            MODELS.SMART
+        case "chat":
+          model = MODELS.CHAT
           break
 
-        case "cheap":
-          model =
-            MODELS.CHEAP
+        case "analyst":
+          model = MODELS.ANALYST
           break
 
-        case "long":
-          model =
-            MODELS.LONG
+        case "coder":
+          model = MODELS.CODER
           break
 
         case "auto":
         default:
 
-          if (
-            remaining < 0.05
+          const queryLower = query.toLowerCase()
+
+          const codingKeywords = [
+            "code",
+            "coding",
+            "python",
+            "javascript",
+            "typescript",
+            "java",
+            "c#",
+            "go",
+            "rust",
+            "sql",
+            "api",
+            "react",
+            "vue",
+            "spring",
+            "docker",
+            "kubernetes",
+            "debug",
+            "bug",
+            "fix",
+            "refactor",
+            "review",
+            "git"
+          ]
+
+          const codingHit =
+            codingKeywords.some(k =>
+              queryLower.includes(k)
+            )
+
+          if (remaining < 0.05) {
+
+            model = MODELS.CHAT
+
+          }
+          else if (length > 15000) {
+
+            model = MODELS.CODER
+
+          }
+          else if (
+            isCodingQuery(query, env)
           ) {
 
-            model =
-              MODELS.CHEAP
+            model = MODELS.CODER
 
-          } else if (
-            length > 15000
+          }
+          else if (
+            isChatQuery(query, env)
           ) {
 
-            model =
-              MODELS.LONG
+            model = MODELS.CHAT
 
-          } else {
+          }
+          else {
 
-            model =
-              MODELS.SMART
+            model = MODELS.ANALYST
 
           }
 
@@ -2278,11 +2290,9 @@ ${searchContext}
         }
 
         const fallbackChain = [
-
-          MODELS.LONG,
-          MODELS.SMART,
-          MODELS.CHEAP
-
+          MODELS.CODER,
+          MODELS.ANALYST,
+          MODELS.CHAT
         ]
 
         let currentIndex =
@@ -2637,24 +2647,23 @@ ${searchContext}
 // =====================
 
 function getModelCost(env) {
-
   return {
 
-    SMART:
+    CHAT:
       Number(
-        env.COST_SMART ||
-        0.0000025
-      ),
-
-    CHEAP:
-      Number(
-        env.COST_CHEAP ||
+        env.COST_CHAT ||
         0.0000005
       ),
 
-    LONG:
+    ANALYST:
       Number(
-        env.COST_LONG ||
+        env.COST_ANALYST ||
+        0.0000025
+      ),
+
+    CODER:
+      Number(
+        env.COST_CODER ||
         0.000001
       ),
 
@@ -2663,9 +2672,7 @@ function getModelCost(env) {
         env.COST_VISION ||
         0.000002
       )
-
   }
-
 }
 
 function estimateCost(
@@ -2674,33 +2681,27 @@ function estimateCost(
   MODELS,
   MODEL_COST
 ) {
-
   let rate =
-    MODEL_COST.SMART
+    MODEL_COST.ANALYST
 
-  if (
-    model === MODELS.CHEAP
+  if (model === MODELS.CHAT) {
+    rate =
+      MODEL_COST.CHAT
+  }
+  else if (
+    model === MODELS.CODER
   ) {
     rate =
-      MODEL_COST.CHEAP
+      MODEL_COST.CODER
   }
-
   else if (
-    model === MODELS.LONG
-  ) {
-    rate =
-      MODEL_COST.LONG
-  }
-
-  else if (
-    model === MODELS.VISION
+    model === MODELS.VISION_RAW
   ) {
     rate =
       MODEL_COST.VISION
   }
 
   return length * rate
-
 }
 
 // =====================
@@ -2793,27 +2794,23 @@ function getCurrentDatePrompt() {
 // =====================
 
 function getModels(env) {
-
   return {
-
-    SMART:
-      env.MODEL_SMART ||
-      "@cf/qwen/qwen3.8-27b",
-
-    CHEAP:
-      env.MODEL_CHEAP ||
+    CHAT:
+      env.MODEL_CHAT ||
       "@cf/meta/llama-4-scout-17b-16e-instruct",
 
-    LONG:
-      env.MODEL_LONG ||
+    ANALYST:
+      env.MODEL_ANALYST ||
+      "@cf/qwen/qwen3.8-27b",
+
+    CODER:
+      env.MODEL_CODER ||
       "@cf/openai/gpt-oss-120b",
 
     VISION_RAW:
       env.MODEL_VISION_RAW ||
       "@cf/meta/llama-3.2-11b-vision-instruct"
-
   };
-
 }
 
 // =====================
@@ -4489,7 +4486,7 @@ function shouldSkipSearch(
 
   const patterns =
     getPatterns(
-      env.SEARCH_SKIP_PATTERNS
+      env.CHAT_PATTERNS
     );
 
   const text =
@@ -8278,6 +8275,36 @@ function isDateTimeQuery(
       text
     )
   );
+}
+
+function isChatQuery(query, env) {
+  const patterns = getPatterns(
+    env.CHAT_PATTERNS
+  )
+
+  const text = String(query || "")
+    .toLowerCase()
+
+  return patterns.some(p =>
+    text.includes(
+      p.toLowerCase()
+    )
+  )
+}
+
+function isCodingQuery(query, env) {
+  const patterns = getPatterns(
+    env.CODING_PATTERNS
+  )
+
+  const text = String(query || "")
+    .toLowerCase()
+
+  return patterns.some(p =>
+    text.includes(
+      p.toLowerCase()
+    )
+  )
 }
 
 // =====================
