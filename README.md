@@ -231,3 +231,9 @@ src/index.js
 ```text
 https://github.com/hh000hh/CF-AI-Model-Router
 ```
+
+---
+
+# License
+
+MIT
