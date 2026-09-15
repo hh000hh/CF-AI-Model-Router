@@ -564,7 +564,15 @@ export default {
         )
       }
 
-      const tools = []
+      const tools =
+        Array.isArray(body.tools)
+          ? body.tools
+          : [];
+
+      console.error(
+        "TOOLS_COUNT=" +
+        tools.length
+      );
 
       const temperature =
         typeof body.temperature === "number"
@@ -735,6 +743,11 @@ export default {
 
       }
 
+      console.error(
+        "FINAL_MODEL=" +
+        model
+      );
+
       // =====================
       // Stream Bypass Config
       // =====================
@@ -796,24 +809,35 @@ export default {
               )
         );
 
+      const normalizedQuery =
+        query.trim().toUpperCase();
+
       const isTickerLike =
-        /^[A-Z]{1,6}$/.test(
-          symbol
+        /^[A-Z]{1,5}$/.test(symbol)
+        &&
+        normalizedQuery === symbol
+        &&
+        symbol.length >= 2
+        &&
+        symbol.length <= 5;
+
+      const isChat =
+        isChatQuery(
+          query,
+          env
         );
 
       const isStockRequest =
-
-        hasStockKeyword
-
-        ||
-
+        !isChat
+        &&
         (
-          isTickerLike &&
-          !cryptoCodes.includes(
-            symbol
+          hasStockKeyword
+          ||
+          (
+            isTickerLike &&
+            !cryptoCodes.includes(symbol)
           )
         );
-
 
       // =====================
       // Date / Time Intercept
@@ -1185,96 +1209,24 @@ export default {
           const systemPrompt = `
 ${getCurrentDatePrompt().content}
 
-IMPORTANT:
-
-Tool calling is NOT available.
-
-Do NOT output:
-
-<tool_call>
-</tool_call>
-
-web_search(
-vision_analyze(
-skill_view(
-memory(
-terminal(
-
-The search has already been completed when needed.
+You are a helpful assistant.
 
 Answer the user directly.
 
 If search results are provided,
-use them directly.
+use them as the source of truth.
 
-Never emit tool-call syntax.
+Do not fabricate information.
 
-${searchContext
-              ? `
+${searchContext ? `
 
 实时搜索结果：
 
 ${searchContext}
 
-重要规则：
-
-1. 只能使用 SEARCH RESULTS 中实际出现的内容回答。
-
-2. 如果某条信息没有出现在 SEARCH RESULTS 中，
-禁止提及。
-
-3. 回答新闻类问题时：
-
-- 优先列出搜索结果中的标题
-- 引用对应摘要
-- 引用对应来源
-
-4. 不允许根据常识补充内容。
-
-5. 不允许根据历史知识补充内容。
-
-6. 不允许根据公司背景推测内容。
-
-7. 不允许归纳不存在于搜索结果中的结论。
-
-8. 如果 SEARCH RESULTS 中存在相关新闻标题或摘要，
-必须优先列出这些搜索结果。
-
-不要直接回答：
-"搜索结果未提供足够信息。"
-
-9. 只有当 SEARCH RESULTS 与用户问题完全无关时，
-才回答：
-
-"搜索结果未找到相关信息。"
-
-禁止：
-
-- 编造
-- 猜测
-- 推断
-- 总结不存在的信息
-- 补充背景知识
-- 补充新闻细节
-- 补充时间
-- 补充数字
-- 补充财务数据
-- 补充产品发布信息
-
-回答格式：
-
-标题：
-来源：
-摘要：
-
-标题：
-来源：
-摘要：
-
 仅基于 SEARCH RESULTS 回答。
-`
-              : ""
-            }
+
+` : ""}
 `;
 
           runtimeMessages = [
@@ -1317,10 +1269,6 @@ ${searchContext}
             messages: runtimeMessages,
             temperature,
             max_tokens
-          }
-
-          if (tools?.length) {
-            params.tools = tools
           }
 
           console.error(
@@ -2077,32 +2025,26 @@ ${symbol} `
           const systemPrompt = `
 ${getCurrentDatePrompt().content}
 
-          IMPORTANT:
+You are a helpful AI assistant.
 
-Tool calling is NOT available.
+Answer the user's question directly.
 
-Do NOT output:
+General rules:
 
-          <tool_call>
-          </tool_call>
+- Be accurate.
+- Be concise when possible.
+- Do not fabricate information.
+- If information is unavailable, say so clearly.
+- Use provided context as the source of truth.
 
-          web_search(
-            vision_analyze(
-              skill_view(
-                memory(
-                  terminal(
+If search results are provided:
 
-                    The search has already been completed when needed.
+- Use the provided search results.
+- Do not ignore them.
+- Do not invent facts outside the search results.
+- Do not repeat the search.
 
-Answer the user directly.
-
-If search results are provided,
-                    use them directly.
-
-Never emit tool - call syntax.
-
-                    ${searchContext
-              ? `
+${searchContext ? `
 
 实时搜索结果：
 
@@ -2137,19 +2079,6 @@ ${searchContext}
 
 "搜索结果未找到相关信息。"
 
-禁止：
-
-- 编造
-- 猜测
-- 推断
-- 总结不存在的信息
-- 补充背景知识
-- 补充新闻细节
-- 补充时间
-- 补充数字
-- 补充财务数据
-- 补充产品发布信息
-
 回答格式：
 
 标题：
@@ -2161,10 +2090,9 @@ ${searchContext}
 摘要：
 
 仅基于 SEARCH RESULTS 回答。
-`
-              : ""
-            }
-`
+
+` : ""}
+`;
 
           runtimeMessages = [
             {
@@ -2206,10 +2134,6 @@ ${searchContext}
             messages: runtimeMessages,
             temperature,
             max_tokens
-          }
-
-          if (tools?.length) {
-            params.tools = tools
           }
 
           console.error(
@@ -2326,10 +2250,6 @@ ${searchContext}
               max_tokens
             }
 
-            if (tools?.length) {
-              params.tools = tools
-            }
-
             console.error(
               "SYSTEM_COUNT=" +
               runtimeMessages.filter(
@@ -2398,7 +2318,7 @@ ${searchContext}
 
       const assistantMessage = {
         role: "assistant"
-      }
+      };
 
       let content =
         aiRes?.response ??
@@ -2409,101 +2329,16 @@ ${searchContext}
         aiRes?.choices?.[0]?.message?.content ??
         aiRes?.choices?.[0]?.message?.reasoning ??
         aiRes?.choices?.[0]?.message?.reasoning_content ??
-        null
+        "";
 
       if (
         typeof content === "string"
       ) {
-
-        content = content.replace(
-          /<tool_call>[\s\S]*?<\/tool_call>/gi,
-          ""
-        )
-
-        content = content.replace(
-          /web_search\s*\([^)]*\)/gi,
-          ""
-        )
-
-        content = content.replace(
-          /vision_analyze\s*\([^)]*\)/gi,
-          ""
-        )
-
-        content = content.replace(
-          /skill_view\s*\([^)]*\)/gi,
-          ""
-        )
-
-        content = content.trim()
-
+        content = content.trim();
       }
 
-      const toolCalls =
-        aiRes?.tool_calls ??
-        aiRes?.choices?.[0]?.message?.tool_calls ??
-        aiRes?.choices?.[0]?.tool_calls ??
-        []
-
-      const hasToolCalls =
-        Array.isArray(toolCalls) &&
-        toolCalls.length > 0
-
-      if (content !== null) {
-        assistantMessage.content =
-          content
-      }
-
-      if (hasToolCalls) {
-
-        assistantMessage.tool_calls =
-          toolCalls.map((t, index) => ({
-            id:
-              t.id ||
-              `call_${index} `,
-
-            type: "function",
-
-            function: {
-              name:
-                t.name ||
-                t.function?.name,
-
-              arguments:
-                typeof t.arguments === "string"
-                  ? t.arguments
-                  : JSON.stringify(
-                    t.arguments || {}
-                  )
-            }
-          }))
-
-        assistantMessage.content = null
-      }
-
-      if (
-        typeof content === "string" &&
-        (
-          content.includes("<tool_call>") ||
-          content.includes("web_search(")
-        )
-      ) {
-
-        console.warn(
-          "BLOCKED TOOL CALL:",
-          content
-        )
-
-      }
-
-      if (
-        assistantMessage.content === undefined &&
-        !hasToolCalls
-      ) {
-        assistantMessage.content =
-          JSON.stringify(aiRes)
-      }
-
+      assistantMessage.content =
+        content || "";
 
       // =====================
       // Cost Record
@@ -2589,13 +2424,11 @@ ${searchContext}
 
             logprobs: null,
 
-            finish_reason:
-              hasToolCalls
-                ? "tool_calls"
-                : "stop"
+            finish_reason: "stop"
+
           }
         ]
-      }
+      };
 
       console.error(
         "FINAL_STREAM=" + stream
@@ -2605,19 +2438,25 @@ ${searchContext}
 
         return sseText(
           assistantMessage.content ||
-          "OK"
+          ""
         );
 
       }
 
       console.error(
-        "RETURN_JSON"
+        "RETURN_OPENAI_JSON"
       );
 
-      return jsonOpenAI(
-        assistantMessage.content ||
-        "OK",
-        requestedModel
+      return new Response(
+        JSON.stringify(
+          responsePayload
+        ),
+        {
+          headers: {
+            "Content-Type":
+              "application/json"
+          }
+        }
       );
 
     } catch (err) {
@@ -2625,7 +2464,7 @@ ${searchContext}
       console.error(
         "Worker Error:",
         err?.stack || err
-      )
+      );
 
       return json(
         {
@@ -2634,7 +2473,7 @@ ${searchContext}
             "Internal Error"
         },
         500
-      )
+      );
 
     }
 
