@@ -345,7 +345,6 @@ export default {
         );
       }
 
-
       // =============================
       // 再过滤消息
       // =============================
@@ -386,11 +385,28 @@ export default {
         query
       );
 
+      const matchedTool =
+        detectMcpTool(
+          query,
+          env
+        );
+
+      if (matchedTool) {
+
+        console.error(
+          "MCP_TOOL_DETECTED=" +
+          matchedTool
+        );
+
+      }
+
       const cleanMessages =
         trimmedMessages
           .filter(
             m =>
-              m.role !== "system"
+              m.role === "user" ||
+              m.role === "assistant" ||
+              m.role === "tool"
           )
           .slice(-20);
 
@@ -662,85 +678,61 @@ export default {
 
       let model
 
-      switch (requestedModel) {
+      const hasToolsRequest = Array.isArray(body.tools) && body.tools.length > 0;
 
-        case "chat":
-          model = MODELS.CHAT
-          break
+      if (hasToolsRequest) {
 
-        case "analyst":
-          model = MODELS.ANALYST
-          break
+        model = MODELS.ANALYST;
+        console.error("MCP_TOOLS_DETECTED: Force routing to tool-enabled Qwen27B=" + model);
 
-        case "coder":
-          model = MODELS.CODER
-          break
+      } else {
 
-        case "auto":
-        default:
+        switch (requestedModel) {
 
-          const queryLower = query.toLowerCase()
-
-          const codingKeywords = [
-            "code",
-            "coding",
-            "python",
-            "javascript",
-            "typescript",
-            "java",
-            "c#",
-            "go",
-            "rust",
-            "sql",
-            "api",
-            "react",
-            "vue",
-            "spring",
-            "docker",
-            "kubernetes",
-            "debug",
-            "bug",
-            "fix",
-            "refactor",
-            "review",
-            "git"
-          ]
-
-          const codingHit =
-            codingKeywords.some(k =>
-              queryLower.includes(k)
-            )
-
-          if (remaining < 0.05) {
-
+          case "chat":
             model = MODELS.CHAT
+            break
 
-          }
-          else if (length > 15000) {
-
-            model = MODELS.CODER
-
-          }
-          else if (
-            isCodingQuery(query, env)
-          ) {
-
-            model = MODELS.CODER
-
-          }
-          else if (
-            isChatQuery(query, env)
-          ) {
-
-            model = MODELS.CHAT
-
-          }
-          else {
-
+          case "analyst":
             model = MODELS.ANALYST
+            break
 
-          }
+          case "coder":
+            model = MODELS.CODER
+            break
 
+          case "auto":
+          default:
+
+            const queryLower = query.toLowerCase()
+
+            const codingKeywords = [
+              "code", "coding", "python", "javascript", "typescript", "java",
+              "c#", "go", "rust", "sql", "api", "react", "vue", "spring",
+              "docker", "kubernetes", "debug", "bug", "fix", "refactor", "review", "git"
+            ]
+
+            const codingHit =
+              codingKeywords.some(k =>
+                queryLower.includes(k)
+              )
+
+            if (remaining < 0.05) {
+              model = MODELS.CHAT
+            }
+            else if (length > 15000) {
+              model = MODELS.CODER
+            }
+            else if (isCodingQuery(query, env)) {
+              model = MODELS.CODER
+            }
+            else if (isChatQuery(query, env)) {
+              model = MODELS.CHAT
+            }
+            else {
+              model = MODELS.ANALYST
+            }
+        }
       }
 
       console.error(
@@ -1120,9 +1112,7 @@ export default {
 
           const cleanMessages =
             normalizedMessages
-              .filter(
-                m => m.role !== "system"
-              )
+              .filter(m => m.role === "user" || m.role === "assistant" || m.role === "tool")
               .slice(-20);
 
           const shortQuery =
@@ -1148,10 +1138,12 @@ export default {
           let rankedResults = []
 
           const searchNeeded =
-            await shouldSearch(
-              query,
-              env
-            );
+            matchedTool
+              ? false
+              : await shouldSearch(
+                query,
+                env
+              );
 
           console.error(
             "SEARCH_NEEDED=" +
@@ -1268,7 +1260,8 @@ ${searchContext}
           const params = {
             messages: runtimeMessages,
             temperature,
-            max_tokens
+            max_tokens,
+            tools
           }
 
           console.error(
@@ -1283,10 +1276,33 @@ ${searchContext}
             ).length
           );
 
-          aiRes = await env.AI.run(
-            model,
-            params
-          )
+          aiRes =
+            await env.AI.run(
+              model,
+              params
+            );
+
+          console.error(
+            "AI_RESPONSE=" +
+            JSON.stringify(aiRes)
+          );
+
+          const toolLoop =
+            await processToolCalls(
+              aiRes,
+              runtimeMessages,
+              model,
+              temperature,
+              max_tokens,
+              tools,
+              env
+            );
+
+          aiRes =
+            toolLoop.aiRes;
+
+          runtimeMessages =
+            toolLoop.messages;
 
         } else {
 
@@ -2133,7 +2149,8 @@ ${searchContext}
           const params = {
             messages: runtimeMessages,
             temperature,
-            max_tokens
+            max_tokens,
+            tools
           }
 
           console.error(
@@ -2148,10 +2165,33 @@ ${searchContext}
             ).length
           );
 
-          aiRes = await env.AI.run(
-            model,
-            params
-          )
+          aiRes =
+            await env.AI.run(
+              model,
+              params
+            );
+
+          console.error(
+            "AI_RESPONSE=" +
+            JSON.stringify(aiRes)
+          );
+
+          const toolLoop =
+            await processToolCalls(
+              aiRes,
+              runtimeMessages,
+              model,
+              temperature,
+              max_tokens,
+              tools,
+              env
+            );
+
+          aiRes =
+            toolLoop.aiRes;
+
+          runtimeMessages =
+            toolLoop.messages;
         }
 
       } catch (e) {
@@ -2176,40 +2216,14 @@ ${searchContext}
           e?.message?.includes("4006")
         ) {
 
-          return json({
+          console.error(
+            "CF_AI_4006",
+            e?.stack || e
+          );
 
-            id:
-              "chatcmpl-" +
-              crypto.randomUUID(),
-
-            object:
-              "chat.completion",
-
-            created:
-              Math.floor(
-                Date.now() / 1000
-              ),
-
-            model:
-              requestedModel,
-
-            choices: [
-              {
-                index: 0,
-
-                message: {
-                  role: "assistant",
-                  content:
-                    searchContext ||
-                    "Cloudflare AI额度已耗尽，请稍后再试。"
-                },
-
-                logprobs: null,
-
-                finish_reason: "stop"
-              }
-            ]
-          })
+          throw new Error(
+            e?.message || String(e)
+          );
 
         }
 
@@ -2247,7 +2261,8 @@ ${searchContext}
             const params = {
               messages: runtimeMessages,
               temperature,
-              max_tokens
+              max_tokens,
+              tools: body.tools
             }
 
             console.error(
@@ -2316,29 +2331,42 @@ ${searchContext}
       // Assistant Message
       // =====================
 
+      const toolCalls =
+        aiRes?.tool_calls ??
+        aiRes?.choices?.[0]?.message?.tool_calls ??
+        [];
+
       const assistantMessage = {
         role: "assistant"
       };
 
-      let content =
-        aiRes?.response ??
-        aiRes?.content ??
-        aiRes?.result?.response ??
-        aiRes?.text ??
-        aiRes?.output_text ??
-        aiRes?.choices?.[0]?.message?.content ??
-        aiRes?.choices?.[0]?.message?.reasoning ??
-        aiRes?.choices?.[0]?.message?.reasoning_content ??
-        "";
+      if (aiRes?.tool_calls || aiRes?.result?.tool_calls) {
 
-      if (
-        typeof content === "string"
-      ) {
-        content = content.trim();
+        assistantMessage.tool_calls = aiRes.tool_calls || aiRes.result.tool_calls;
+        assistantMessage.content = null;
+
+      } else {
+
+        let content =
+          aiRes?.response ??
+          aiRes?.content ??
+          aiRes?.result?.response ??
+          aiRes?.text ??
+          aiRes?.output_text ??
+          aiRes?.choices?.[0]?.message?.content ??
+          aiRes?.choices?.[0]?.message?.reasoning ??
+          aiRes?.choices?.[0]?.message?.reasoning_content ??
+          "";
+
+        if (
+          typeof content === "string"
+        ) {
+          content = content.trim();
+        }
+
+        assistantMessage.content =
+          content || "";
       }
-
-      assistantMessage.content =
-        content || "";
 
       // =====================
       // Cost Record
@@ -2424,10 +2452,11 @@ ${searchContext}
 
             logprobs: null,
 
-            finish_reason: "stop"
+            finish_reason: assistantMessage.tool_calls ? "tool_calls" : "stop"
 
           }
         ]
+
       };
 
       console.error(
@@ -4106,6 +4135,14 @@ async function shouldSearchAI(
   env
 ) {
 
+  if (
+    String(
+      env.SEARCH_ENABLED
+    ).toLowerCase() !== "true"
+  ) {
+    return false;
+  }
+
   const models =
     getModels(env);
 
@@ -4121,33 +4158,76 @@ async function shouldSearchAI(
       .trim()
       .toUpperCase();
 
-  const r =
-    await env.AI.run(
-      models.CHEAP,
-      {
-        messages: [
-          {
-            role: "system",
-            content: prompt
-          },
-          {
-            role: "user",
-            content: query
-          }
-        ]
-      }
+  try {
+
+    const r =
+      await env.AI.run(
+        models.CHAT,
+        {
+          messages: [
+            {
+              role: "system",
+              content: prompt
+            },
+            {
+              role: "user",
+              content: query
+            }
+          ],
+          max_tokens: 8,
+          temperature: 0
+        }
+      );
+
+    console.error(
+      "SEARCH_AI_RAW=" +
+      JSON.stringify(r)
     );
 
-  const answer =
-    String(
-      r?.response || ""
-    )
-      .trim()
-      .toUpperCase();
+    const answer =
+      String(
 
-  return answer.startsWith(
-    yesPrefix
-  );
+        r?.response ??
+
+        r?.content ??
+
+        r?.text ??
+
+        r?.output_text ??
+
+        r?.choices?.[0]?.message?.content ??
+
+        r?.choices?.[0]?.text ??
+
+        ""
+
+      )
+        .trim()
+        .toUpperCase();
+
+    console.error(
+      "SEARCH_AI_RESPONSE=" +
+      answer
+    );
+
+    if (!answer) {
+      return false;
+    }
+
+    return answer.startsWith(
+      yesPrefix
+    );
+
+  } catch (err) {
+
+    console.error(
+      "[SEARCH AI]",
+      err?.message || err
+    );
+
+    return false;
+
+  }
 
 }
 
@@ -4183,6 +4263,31 @@ async function shouldSearch(
     )
   ) {
 
+    console.error(
+      "SEARCH_SKIP_HERMES_CONTINUE"
+    );
+
+    return false;
+
+  }
+
+  // =====================
+  // MCP Tool Detection
+  // =====================
+
+  const matchedTool =
+    detectMcpTool(
+      query,
+      env
+    );
+
+  if (matchedTool) {
+
+    console.error(
+      "MCP_TOOL_DETECTED=" +
+      matchedTool
+    );
+
     return false;
 
   }
@@ -4214,12 +4319,16 @@ async function shouldSearch(
     imageHits >= 2
   ) {
 
+    console.error(
+      "SEARCH_SKIP_IMAGE_SUMMARY"
+    );
+
     return false;
 
   }
 
   // =====================
-  // 强制搜索
+  // Force Search
   // =====================
 
   if (
@@ -4233,10 +4342,6 @@ async function shouldSearch(
 
   }
 
-  // =====================
-  // 强制搜索模式
-  // =====================
-
   if (
     shouldForceSearch(
       query,
@@ -4249,7 +4354,7 @@ async function shouldSearch(
   }
 
   // =====================
-  // 强制不搜索
+  // Force Skip
   // =====================
 
   if (
@@ -4264,18 +4369,15 @@ async function shouldSearch(
   }
 
   // =====================
-  // AI判断
+  // AI Decision
   // =====================
 
   try {
 
-    const result =
-      await shouldSearchAI(
-        query,
-        env
-      );
-
-    return result;
+    return await shouldSearchAI(
+      query,
+      env
+    );
 
   } catch (err) {
 
@@ -8261,5 +8363,367 @@ function logPreview(
     String(value || "")
       .replace(/\s+/g, " ")
       .trim();
+
+}
+
+// =====================
+// MCP Helpers
+// =====================
+
+function detectMcpTool(
+  query,
+  env
+) {
+
+  const text =
+    String(query || "")
+      .toLowerCase();
+
+  let mappings = {};
+
+  try {
+
+    mappings =
+      JSON.parse(
+        env.MCP_TOOLS ||
+        "{}"
+      );
+
+  } catch {
+
+    return null;
+
+  }
+
+  for (
+    const [tool, keywords]
+    of Object.entries(mappings)
+  ) {
+
+    if (
+      !Array.isArray(keywords)
+    ) {
+      continue;
+    }
+
+    const matched =
+      keywords.some(
+        keyword =>
+          text.includes(
+            String(keyword)
+              .toLowerCase()
+          )
+      );
+
+    if (matched) {
+
+      console.error(
+        "MCP_TOOL_MATCH=" +
+        tool
+      );
+
+      return tool;
+
+    }
+
+  }
+
+  return null;
+
+}
+
+async function callMcpTool(
+  toolName,
+  args,
+  env
+) {
+
+  const resp =
+    await fetch(
+      env.MCP_URL,
+      {
+        method: "POST",
+
+        headers: {
+          Authorization:
+            `Bearer ${env.MCP_TOKEN}`,
+
+          "Content-Type":
+            "application/json"
+        },
+
+        body: JSON.stringify({
+
+          jsonrpc: "2.0",
+
+          id: 1,
+
+          method:
+            "tools/call",
+
+          params: {
+
+            name:
+              toolName,
+
+            arguments:
+              args || {}
+
+          }
+
+        })
+      }
+    );
+
+  const data =
+    await resp.json();
+
+  return data;
+
+}
+
+async function processToolCalls(
+  aiRes,
+  runtimeMessages,
+  model,
+  temperature,
+  max_tokens,
+  tools,
+  env
+) {
+
+  const MAX_AGENT_ITERATIONS =
+    Number(
+      env.MAX_AGENT_ITERATIONS || 3
+    );
+
+  const MAX_TOOL_CALLS =
+    Number(
+      env.MAX_TOOL_CALLS || 5
+    );
+
+  let currentMessages =
+    [...runtimeMessages];
+
+  let currentRes =
+    aiRes;
+
+  let iteration = 0;
+
+  while (
+    iteration <
+    MAX_AGENT_ITERATIONS
+  ) {
+
+    const toolCalls =
+      currentRes?.tool_calls ??
+      currentRes?.choices?.[0]?.message?.tool_calls ??
+      [];
+
+    if (
+      !Array.isArray(toolCalls) ||
+      toolCalls.length === 0
+    ) {
+
+      console.error(
+        "NO_MORE_TOOL_CALLS"
+      );
+
+      return {
+
+        aiRes:
+          currentRes,
+
+        messages:
+          currentMessages,
+
+        handled:
+          iteration > 0
+
+      };
+
+    }
+
+    iteration++;
+
+    console.error(
+      "AGENT_ITERATION=" +
+      iteration
+    );
+
+    console.error(
+      "TOOL_CALL_COUNT=" +
+      toolCalls.length
+    );
+
+    const safeToolCalls =
+      toolCalls.slice(
+        0,
+        MAX_TOOL_CALLS
+      );
+
+    const toolResults = [];
+
+    for (
+      const toolCall
+      of safeToolCalls
+    ) {
+
+      const toolName =
+        toolCall?.function?.name ??
+        toolCall?.name;
+
+      let toolArgs = {};
+
+      try {
+
+        toolArgs =
+          JSON.parse(
+            toolCall?.function?.arguments ??
+            toolCall?.arguments ??
+            "{}"
+
+          );
+
+      } catch (e) {
+
+        console.error(
+          "TOOL_ARGS_PARSE_ERROR=" +
+          toolName
+        );
+
+      }
+
+      console.error(
+        "TOOL_NAME=" +
+        toolName
+      );
+
+      try {
+
+        const toolResult =
+          await callMcpTool(
+            toolName,
+            toolArgs,
+            env
+          );
+
+        console.error(
+          "TOOL_RESULT=" +
+          JSON.stringify(
+            toolResult
+          )
+        );
+
+        toolResults.push({
+
+          name:
+            toolName,
+
+          result:
+            toolResult
+
+        });
+
+      } catch (err) {
+
+        console.error(
+          "TOOL_ERROR=" +
+          toolName +
+          ":" +
+          (
+            err?.message ||
+            err
+          )
+        );
+
+        toolResults.push({
+
+          name:
+            toolName,
+
+          result: {
+
+            error:
+              err?.message ||
+              "Tool failed"
+
+          }
+
+        });
+
+      }
+
+    }
+
+    currentMessages.push({
+
+      role:
+        "assistant",
+
+      tool_calls:
+        toolCalls
+
+    });
+
+    for (
+      const item
+      of toolResults
+    ) {
+
+      currentMessages.push({
+
+        role:
+          "tool",
+
+        name:
+          item.name,
+
+        content:
+          JSON.stringify(
+            item.result
+          )
+
+      });
+
+    }
+
+    currentRes =
+      await env.AI.run(
+        model,
+        {
+          messages:
+            currentMessages,
+          temperature,
+          max_tokens,
+          tools
+        }
+      );
+
+    console.error(
+      "AI_RESPONSE_AFTER_TOOL=" +
+      JSON.stringify(
+        currentRes
+      )
+    );
+
+  }
+
+  console.error(
+    "MAX_AGENT_ITERATIONS_REACHED"
+  );
+
+  return {
+
+    aiRes:
+      currentRes,
+
+    messages:
+      currentMessages,
+
+    handled:
+      true
+
+  };
 
 }
