@@ -398,6 +398,34 @@ export default {
           matchedTool
         );
 
+        const result =
+          await callMcpTool(
+            matchedTool,
+            {},
+            env
+          );
+
+        console.error(
+          "MCP_DIRECT_CALL_RESULT=" +
+          JSON.stringify(result)
+        );
+
+        const content =
+          result?.result?.content?.[0]?.text ??
+          JSON.stringify(
+            result,
+            null,
+            2
+          );
+
+        if (stream) {
+          return sseText(content);
+        }
+
+        return jsonOpenAI(
+          content,
+          requestedModel
+        );
       }
 
       const cleanMessages =
@@ -1257,12 +1285,13 @@ ${searchContext}
 
           }
 
-          const params = {
-            messages: runtimeMessages,
-            temperature,
-            max_tokens,
-            tools
-          }
+          const params =
+            buildAIParams(
+              runtimeMessages,
+              temperature,
+              max_tokens,
+              tools
+            );
 
           console.error(
             "MODEL_START=" +
@@ -1298,11 +1327,13 @@ ${searchContext}
               env
             );
 
-          aiRes =
-            toolLoop.aiRes;
+          aiRes = toolLoop.aiRes;
+          runtimeMessages = toolLoop.messages;
 
-          runtimeMessages =
-            toolLoop.messages;
+          console.error(
+            "TOOL_HANDLED=" +
+            toolLoop.handled
+          );
 
         } else {
 
@@ -2146,12 +2177,13 @@ ${searchContext}
 
           }
 
-          const params = {
-            messages: runtimeMessages,
-            temperature,
-            max_tokens,
-            tools
-          }
+          const params =
+            buildAIParams(
+              runtimeMessages,
+              temperature,
+              max_tokens,
+              tools
+            );
 
           console.error(
             "MESSAGE_COUNT=" +
@@ -2187,11 +2219,14 @@ ${searchContext}
               env
             );
 
-          aiRes =
-            toolLoop.aiRes;
+          aiRes = toolLoop.aiRes;
+          runtimeMessages = toolLoop.messages;
 
-          runtimeMessages =
-            toolLoop.messages;
+          console.error(
+            "TOOL_HANDLED=" +
+            toolLoop.handled
+
+          );
         }
 
       } catch (e) {
@@ -2258,12 +2293,13 @@ ${searchContext}
 
           try {
 
-            const params = {
-              messages: runtimeMessages,
-              temperature,
-              max_tokens,
-              tools: body.tools
-            }
+            const params =
+              buildAIParams(
+                runtimeMessages,
+                temperature,
+                max_tokens,
+                tools
+              );
 
             console.error(
               "SYSTEM_COUNT=" +
@@ -2331,19 +2367,31 @@ ${searchContext}
       // Assistant Message
       // =====================
 
-      const toolCalls =
-        aiRes?.tool_calls ??
-        aiRes?.choices?.[0]?.message?.tool_calls ??
-        [];
-
       const assistantMessage = {
         role: "assistant"
       };
 
-      if (aiRes?.tool_calls || aiRes?.result?.tool_calls) {
+      const finalToolCalls =
+        aiRes?.tool_calls ??
+        aiRes?.result?.tool_calls ??
+        aiRes?.choices?.[0]?.message?.tool_calls ??
+        [];
 
-        assistantMessage.tool_calls = aiRes.tool_calls || aiRes.result.tool_calls;
-        assistantMessage.content = null;
+      console.error(
+        "FINAL_TOOL_CALLS_RAW=" +
+        JSON.stringify(finalToolCalls)
+      );
+
+      if (
+        Array.isArray(finalToolCalls) &&
+        finalToolCalls.length > 0
+      ) {
+
+        assistantMessage.tool_calls =
+          finalToolCalls;
+
+        assistantMessage.content =
+          null;
 
       } else {
 
@@ -2400,7 +2448,30 @@ ${searchContext}
       // Response
       // =====================
 
+      const finalFinishReason =
+        (
+          Array.isArray(
+            assistantMessage.tool_calls
+          ) &&
+          assistantMessage.tool_calls.length > 0
+        )
+          ? "tool_calls"
+          : "stop";
+
+      console.error(
+        "FINAL_FINISH_REASON=" +
+        finalFinishReason
+      );
+
+      console.error(
+        "FINAL_TOOL_CALLS=" +
+        JSON.stringify(
+          assistantMessage.tool_calls || []
+        )
+      );
+
       const responsePayload = {
+
         id:
           "chatcmpl-" +
           crypto.randomUUID(),
@@ -2420,6 +2491,7 @@ ${searchContext}
           requestedModel,
 
         usage: {
+
           prompt_tokens:
             aiRes?.usage?.prompt_tokens ?? 0,
 
@@ -2452,15 +2524,15 @@ ${searchContext}
 
             logprobs: null,
 
-            finish_reason: assistantMessage.tool_calls ? "tool_calls" : "stop"
-
+            finish_reason:
+              finalFinishReason
           }
         ]
-
       };
 
       console.error(
-        "FINAL_STREAM=" + stream
+        "FINAL_STREAM=" +
+        stream
       );
 
       if (stream) {
@@ -2469,7 +2541,6 @@ ${searchContext}
           assistantMessage.content ||
           ""
         );
-
       }
 
       console.error(
@@ -4265,27 +4336,6 @@ async function shouldSearch(
 
     console.error(
       "SEARCH_SKIP_HERMES_CONTINUE"
-    );
-
-    return false;
-
-  }
-
-  // =====================
-  // MCP Tool Detection
-  // =====================
-
-  const matchedTool =
-    detectMcpTool(
-      query,
-      env
-    );
-
-  if (matchedTool) {
-
-    console.error(
-      "MCP_TOOL_DETECTED=" +
-      matchedTool
     );
 
     return false;
@@ -8377,7 +8427,123 @@ function detectMcpTool(
 
   const text =
     String(query || "")
-      .toLowerCase();
+      .toLowerCase()
+      .trim();
+
+  if (!text) {
+    return null;
+  }
+
+  // =====================
+  // Hard Priority
+  // =====================
+
+  const hardRules = [
+
+    {
+      tool: "get_health",
+      keywords: [
+        "健康",
+        "health",
+        "健康状态"
+      ]
+    },
+
+    {
+      tool: "get_dashboard_info",
+      keywords: [
+        "dashboard 信息",
+        "dashboard info",
+        "dashboard版本",
+        "dashboard 版本",
+        "版本信息"
+      ]
+    },
+
+    {
+      tool: "get_dashboard_stats",
+      keywords: [
+        "dashboard统计",
+        "dashboard stats",
+        "dashboard 状态",
+        "完整统计",
+        "全部统计"
+      ]
+    },
+
+    {
+      tool: "get_workers_ai_stats",
+      keywords: [
+        "workers ai",
+        "workersai",
+        "neurons",
+        "神经元",
+        "额度",
+        "剩余额度",
+        "workers ai 使用情况"
+      ]
+    },
+
+    {
+      tool: "get_openrouter_stats",
+      keywords: [
+        "openrouter",
+        "openrouter余额",
+        "openrouter 余额",
+        "credit",
+        "credits"
+      ]
+    },
+
+    {
+      tool: "get_openai_stats",
+      keywords: [
+        "openai",
+        "openai费用",
+        "openai 费用",
+        "openai账单",
+        "openai 账单",
+        "billing",
+        "cost"
+      ]
+    },
+
+    {
+      tool: "get_providers",
+      keywords: [
+        "provider",
+        "providers",
+        "供应商",
+        "模型供应商"
+      ]
+    }
+
+  ];
+
+  for (const rule of hardRules) {
+
+    const matched =
+      rule.keywords.some(
+        keyword =>
+          text.includes(
+            keyword.toLowerCase()
+          )
+      );
+
+    if (matched) {
+
+      console.error(
+        "MCP_TOOL_FORCE=" +
+        rule.tool
+      );
+
+      return rule.tool;
+    }
+  }
+
+  // =====================
+  // MCP_TOOLS Fallback
+  // =====================
 
   let mappings = {};
 
@@ -8385,15 +8551,21 @@ function detectMcpTool(
 
     mappings =
       JSON.parse(
-        env.MCP_TOOLS ||
-        "{}"
+        env.MCP_TOOLS || "{}"
       );
 
-  } catch {
+  } catch (err) {
+
+    console.error(
+      "MCP_TOOL_PARSE_ERROR=" +
+      (err?.message || err)
+    );
 
     return null;
-
   }
+
+  let bestTool = null;
+  let bestScore = 0;
 
   for (
     const [tool, keywords]
@@ -8406,30 +8578,49 @@ function detectMcpTool(
       continue;
     }
 
-    const matched =
-      keywords.some(
+    const score =
+      keywords.filter(
         keyword =>
           text.includes(
             String(keyword)
               .toLowerCase()
           )
-      );
+      ).length;
 
-    if (matched) {
+    if (score > 0) {
 
       console.error(
-        "MCP_TOOL_MATCH=" +
-        tool
+        "MCP_TOOL_CANDIDATE=" +
+        JSON.stringify({
+          tool,
+          score
+        })
       );
-
-      return tool;
-
     }
 
+    if (
+      score > bestScore
+    ) {
+
+      bestScore = score;
+      bestTool = tool;
+    }
   }
 
-  return null;
+  if (bestTool) {
 
+    console.error(
+      "MCP_TOOL_MATCH=" +
+      bestTool
+    );
+
+    console.error(
+      "MCP_TOOL_SCORE=" +
+      bestScore
+    );
+  }
+
+  return bestTool;
 }
 
 async function callMcpTool(
@@ -8438,48 +8629,126 @@ async function callMcpTool(
   env
 ) {
 
-  const resp =
-    await fetch(
-      env.MCP_URL,
-      {
-        method: "POST",
+  const controller =
+    new AbortController();
 
-        headers: {
-          Authorization:
-            `Bearer ${env.MCP_TOKEN}`,
-
-          "Content-Type":
-            "application/json"
-        },
-
-        body: JSON.stringify({
-
-          jsonrpc: "2.0",
-
-          id: 1,
-
-          method:
-            "tools/call",
-
-          params: {
-
-            name:
-              toolName,
-
-            arguments:
-              args || {}
-
-          }
-
-        })
-      }
+  const timeout =
+    setTimeout(
+      () => controller.abort(),
+      Number(
+        env.MCP_TIMEOUT_MS || 10000
+      )
     );
 
-  const data =
-    await resp.json();
+  try {
 
-  return data;
+    console.error(
+      "MCP_CALL_START=" +
+      toolName
+    );
 
+    console.error(
+      "MCP_CALL_ARGS=" +
+      JSON.stringify(args || {})
+    );
+
+    const resp =
+      await fetch(
+        env.MCP_URL,
+        {
+          method: "POST",
+
+          headers: {
+            Authorization:
+              `Bearer ${env.MCP_TOKEN}`,
+            "Content-Type":
+              "application/json"
+          },
+
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: {
+              name: toolName,
+              arguments:
+                args || {}
+            }
+          }),
+
+          signal:
+            controller.signal
+        }
+      );
+
+    console.error(
+      "MCP_HTTP_STATUS=" +
+      resp.status
+    );
+
+    if (!resp.ok) {
+
+      const errorText =
+        await resp.text();
+
+      throw new Error(
+        `MCP HTTP ${resp.status}: ${errorText}`
+      );
+    }
+
+    const data =
+      await resp.json();
+
+    console.error(
+      "MCP_RAW_RESPONSE=" +
+      JSON.stringify(data)
+    );
+
+    if (data?.error) {
+
+      throw new Error(
+        data.error?.message ||
+        JSON.stringify(
+          data.error
+        )
+      );
+    }
+
+    console.error(
+      "MCP_CALL_SUCCESS=" +
+      toolName
+    );
+
+    return data;
+
+  } catch (err) {
+
+    if (
+      err?.name === "AbortError"
+    ) {
+
+      throw new Error(
+        `MCP Timeout (${toolName})`
+      );
+    }
+
+    console.error(
+      "MCP_CALL_FAILED=" +
+      toolName +
+      ":" +
+      (
+        err?.message || err
+      )
+    );
+
+    throw err;
+
+  } finally {
+
+    clearTimeout(
+      timeout
+    );
+  }
 }
 
 async function processToolCalls(
@@ -8492,14 +8761,87 @@ async function processToolCalls(
   env
 ) {
 
+  const ENABLE_TOOL_CALLING =
+    String(
+      env.ENABLE_TOOL_CALLING ?? "true"
+    ).toLowerCase() === "true";
+
+  console.error(
+    "Local TOOL_CALLING_ENABLED=" +
+    ENABLE_TOOL_CALLING
+  );
+
+  console.error(
+    "Remote TOOL_CALLING_DISABLED=" +
+    (!ENABLE_TOOL_CALLING)
+  );
+
+  // ==================================================
+  // Hermes Agent Mode
+  // ==================================================
+
+  if (!ENABLE_TOOL_CALLING) {
+
+    console.error(
+      "TOOL_MODE=hermes-agent"
+    );
+
+    const toolCalls =
+      aiRes?.tool_calls ??
+      aiRes?.choices?.[0]?.message?.tool_calls ??
+      [];
+
+    console.error(
+      "PASSTHROUGH_TOOL_COUNT=" +
+      toolCalls.length
+    );
+
+    console.error(
+      "PASSTHROUGH_TOOL_CALLS=" +
+      JSON.stringify(toolCalls)
+    );
+
+    const rewritten =
+      rewriteToolCallsForHermes(aiRes);
+
+    console.error(
+      "PASSTHROUGH_REWRITTEN=" +
+      JSON.stringify(
+        rewritten?.tool_calls ??
+        rewritten?.choices?.[0]?.message?.tool_calls ??
+        []
+      )
+    );
+
+    return {
+      aiRes: rewritten,
+      messages: runtimeMessages,
+      handled: false
+    };
+  }
+
+  // ==================================================
+  // Worker Agent Mode
+  // ==================================================
+
+  console.error(
+    "TOOL_MODE=worker-agent"
+  );
+
   const MAX_AGENT_ITERATIONS =
-    Number(
-      env.MAX_AGENT_ITERATIONS || 3
+    Math.max(
+      1,
+      Number(
+        env.MAX_AGENT_ITERATIONS || 3
+      )
     );
 
   const MAX_TOOL_CALLS =
-    Number(
-      env.MAX_TOOL_CALLS || 5
+    Math.max(
+      1,
+      Number(
+        env.MAX_TOOL_CALLS || 5
+      )
     );
 
   let currentMessages =
@@ -8530,18 +8872,10 @@ async function processToolCalls(
       );
 
       return {
-
-        aiRes:
-          currentRes,
-
-        messages:
-          currentMessages,
-
-        handled:
-          iteration > 0
-
+        aiRes: currentRes,
+        messages: currentMessages,
+        handled: iteration > 0
       };
-
     }
 
     iteration++;
@@ -8552,7 +8886,7 @@ async function processToolCalls(
     );
 
     console.error(
-      "TOOL_CALL_COUNT=" +
+      "AGENT_TOOLCALL_COUNT=" +
       toolCalls.length
     );
 
@@ -8562,16 +8896,27 @@ async function processToolCalls(
         MAX_TOOL_CALLS
       );
 
+    if (
+      toolCalls.length >
+      MAX_TOOL_CALLS
+    ) {
+
+      console.error(
+        "TOOL_CALL_LIMITED=" +
+        MAX_TOOL_CALLS
+      );
+    }
+
     const toolResults = [];
 
     for (
-      const toolCall
-      of safeToolCalls
+      const toolCall of safeToolCalls
     ) {
 
       const toolName =
         toolCall?.function?.name ??
-        toolCall?.name;
+        toolCall?.name ??
+        "unknown_tool";
 
       let toolArgs = {};
 
@@ -8582,21 +8927,24 @@ async function processToolCalls(
             toolCall?.function?.arguments ??
             toolCall?.arguments ??
             "{}"
-
           );
 
-      } catch (e) {
+      } catch {
 
         console.error(
           "TOOL_ARGS_PARSE_ERROR=" +
           toolName
         );
-
       }
 
       console.error(
         "TOOL_NAME=" +
         toolName
+      );
+
+      console.error(
+        "TOOL_ARGS=" +
+        JSON.stringify(toolArgs)
       );
 
       try {
@@ -8608,22 +8956,15 @@ async function processToolCalls(
             env
           );
 
-        console.error(
-          "TOOL_RESULT=" +
-          JSON.stringify(
-            toolResult
-          )
-        );
-
         toolResults.push({
-
-          name:
-            toolName,
-
-          result:
-            toolResult
-
+          name: toolName,
+          result: toolResult
         });
+
+        console.error(
+          "TOOL_SUCCESS=" +
+          toolName
+        );
 
       } catch (err) {
 
@@ -8638,92 +8979,115 @@ async function processToolCalls(
         );
 
         toolResults.push({
-
-          name:
-            toolName,
-
+          name: toolName,
           result: {
-
             error:
               err?.message ||
               "Tool failed"
-
           }
-
         });
-
       }
-
     }
 
     currentMessages.push({
-
-      role:
-        "assistant",
-
-      tool_calls:
-        toolCalls
-
+      role: "assistant",
+      tool_calls: toolCalls
     });
 
     for (
-      const item
-      of toolResults
+      const item of toolResults
     ) {
 
       currentMessages.push({
-
-        role:
-          "tool",
-
-        name:
-          item.name,
-
+        role: "tool",
+        name: item.name,
         content:
           JSON.stringify(
             item.result
           )
-
       });
-
     }
 
-    currentRes =
-      await env.AI.run(
-        model,
-        {
-          messages:
-            currentMessages,
-          temperature,
-          max_tokens,
-          tools
-        }
+    try {
+
+      const nextParams = {
+        messages:
+          currentMessages,
+        temperature,
+        max_tokens
+      };
+
+      if (
+        Array.isArray(tools) &&
+        tools.length > 0
+      ) {
+
+        nextParams.tools =
+          tools;
+      }
+
+      console.error(
+        "NEXT_ITERATION_MODEL=" +
+        model
       );
 
-    console.error(
-      "AI_RESPONSE_AFTER_TOOL=" +
-      JSON.stringify(
-        currentRes
-      )
-    );
+      currentRes =
+        await env.AI.run(
+          model,
+          nextParams
+        );
 
+      console.error(
+        "NEXT_ITERATION_RESPONSE=" +
+        JSON.stringify(currentRes)
+      );
+
+    } catch (e) {
+
+      throw new Error(
+        e?.message ||
+        String(e)
+      );
+    }
   }
 
   console.error(
-    "MAX_AGENT_ITERATIONS_REACHED"
+    "MAX_AGENT_ITERATIONS_REACHED=" +
+    MAX_AGENT_ITERATIONS
   );
 
   return {
+    aiRes: currentRes,
+    messages: currentMessages,
+    handled: true
+  };
+}
 
-    aiRes:
-      currentRes,
+function rewriteToolCallsForHermes(
+  aiRes
+) {
+  return aiRes;
+}
 
-    messages:
-      currentMessages,
+function buildAIParams(
+  messages,
+  temperature,
+  max_tokens,
+  tools
+) {
 
-    handled:
-      true
-
+  const params = {
+    messages,
+    temperature,
+    max_tokens
   };
 
+  if (
+    Array.isArray(tools) &&
+    tools.length > 0
+  ) {
+    params.tools = tools;
+  }
+
+  return params;
 }
