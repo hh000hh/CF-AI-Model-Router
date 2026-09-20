@@ -1,5 +1,5 @@
 name = "cf-ai"
-main = "src/index.js"
+main = "src/cf-ai-router.js"
 compatibility_date = "2026-06-23"
 
 [[kv_namespaces]]
