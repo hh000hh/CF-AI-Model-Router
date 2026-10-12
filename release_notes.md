@@ -29,3 +29,32 @@
 - Reduced unnecessary model calls
 - Maintained ENABLE_TOOL_CALLING compatibility
 - Enhanced MCP debugging logs
+
+## 2026-10-12 v1.1.1
+
+### Fixed
+
+- Fixed stock query false-positive routing
+- Fixed Hermes streaming compatibility
+- Fixed SSE handling for FX responses
+- Fixed SSE handling for stock responses
+- Fixed BTC/ETH/SOL/DOGE symbol matching
+- Fixed crypto routing conflicts
+- Fixed Provider Service Error in Hermes
+
+### Refactor
+
+- Added replyText() helper
+- Unified streaming and non-streaming responses
+- Synced runtime entry files
+
+### Verified
+
+- AI Chat
+- Weather
+- Exchange Rates
+- Stocks
+- Crypto
+- Hermes WeChat
+- SSE Streaming
+

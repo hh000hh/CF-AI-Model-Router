@@ -237,3 +237,53 @@ https://github.com/hh000hh/CF-AI-Model-Router
 # License
 
 MIT
+
+## Supported Services
+
+### AI Chat
+
+Examples:
+
+- 你好
+- 翻译
+- 总结
+- 帮我写邮件
+
+### Weather
+
+Examples:
+
+- 上海天气
+- 北京天气
+
+### Exchange Rate
+
+Examples:
+
+- 美元汇率
+- 欧元汇率
+- USD/CNY
+- EUR/USD
+
+### Stocks
+
+Examples:
+
+- AAPL
+- TSLA
+- NVDA
+- Intel股价
+- TSLA行情
+
+### Crypto
+
+Examples:
+
+- BTC
+- ETH
+- SOL
+- DOGE
+- XRP
+- 比特币
+- 以太坊
+
