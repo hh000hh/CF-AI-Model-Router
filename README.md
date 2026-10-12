@@ -2,114 +2,174 @@
 
 Cloudflare AI Model Router is an OpenAI-compatible AI routing gateway built on Cloudflare Workers.
 
-The router intelligently directs requests to specialized AI models for chat, analysis, coding, and vision workloads while providing a unified API endpoint for clients and AI agents.
-
-For Cloudflare bindings, environment variables, KV namespaces, R2 buckets, secrets, and deployment details, see:
-
-```text
-docs/cloudflare-bindings.md
-```
+The router intelligently routes requests to specialized AI models and built-in services through a unified API endpoint while remaining compatible with OpenAI clients, AI agents, and messaging platforms.
 
 ---
 
-# Purpose of the Project
+# Features
 
-The goal of the project is to provide a lightweight, low-cost, cloud-native AI gateway that can:
+## AI Model Routing
 
-- Route different tasks to the most suitable AI model
-- Centralize AI infrastructure behind a single OpenAI-compatible endpoint
-- Reduce operational complexity for AI applications
-- Support agent frameworks and messaging platforms
-- Provide built-in search, finance, weather, and vision capabilities
-
----
-
-# Hermes Agent Integration
-
-Cloudflare AI Model Router can be configured as the AI backend for Hermes Agent.
+Automatically routes requests to the most suitable model:
 
 ```text
-Hermes Agent
-      │
-      ▼
-Cloudflare AI Model Router
-      │
-      ▼
-CHAT / ANALYST / CODER / VISION
+AUTO
+ │
+ ├─ CHAT
+ ├─ ANALYST
+ ├─ CODER
+ └─ VISION
 ```
 
-Benefits:
+## OpenAI Compatible
 
-- OpenAI-compatible endpoint
+Compatible with:
+
+- Hermes Agent
+- Open WebUI
+- LibreChat
+- Dify
+- Roo Code
+- Cline
+- Cursor
+- OpenHands
+- Custom Applications
+
+## Unified Gateway
+
+- OpenAI-compatible API
 - Intelligent model routing
-- Centralized model management
-- Search integration
-- Vision support
-- Cost control
+- Built-in service routing
+- Centralized AI infrastructure
+- Cloudflare-native deployment
+- Low operational cost
 
 ---
 
-# Weixin / WeChat Integration
+# Built-in Services
 
-Cloudflare AI Model Router can be used with Hermes Gateway to build intelligent WeChat assistants.
+The router includes integrated utility services that can be accessed through the same OpenAI-compatible endpoint.
 
-```text
-Weixin User
-      │
-      ▼
-Hermes Gateway
-      │
-      ▼
-Cloudflare AI Model Router
-      │
-      ▼
-CHAT / ANALYST / CODER / VISION
-```
-
-Typical use cases:
-
-- Personal AI assistant
-- Customer service bot
-- Enterprise assistant
-- Knowledge assistant
-- Coding assistant
-- Multi-agent automation workflows
-
----
-
-# OpenAI-Compatible Applications
-
-Any OpenAI-compatible application can connect directly to the router.
+## AI Chat
 
 Examples:
 
 ```text
-Hermes Agent
-Open WebUI
-LibreChat
-Dify
-Roo Code
-Cline
-Cursor
-OpenHands
-Custom Applications
-```
-
-Architecture:
-
-```text
-Client
-  │
-  ▼
-Cloudflare AI Model Router
-  │
-  ▼
-Workers AI Models
+你好
+翻译
+总结
+帮我写邮件
+解释 TCP/IP
 ```
 
 ---
 
-# Routing Architecture
+## Weather
+
+Examples:
+
+```text
+上海天气
+北京天气
+深圳天气
+```
+
+---
+
+## Exchange Rates
+
+Examples:
+
+```text
+美元汇率
+欧元汇率
+
+USD/CNY
+EUR/USD
+GBP/CNY
+
+汇率
+全部汇率
+所有汇率
+```
+
+---
+
+## Stock Market
+
+Examples:
+
+```text
+AAPL
+TSLA
+NVDA
+AMD
+INTC
+
+Intel股价
+TSLA行情
+SNAP一周股价
+```
+
+Supported Markets:
+
+```text
+US Stocks
+Hong Kong Stocks
+China A-Shares
+```
+
+---
+
+## Cryptocurrency
+
+Examples:
+
+```text
+BTC
+ETH
+SOL
+DOGE
+XRP
+
+比特币
+以太坊
+狗狗币
+瑞波币
+```
+
+---
+
+## Search
+
+Examples:
+
+```text
+新闻查询
+市场研究
+技术搜索
+知识查询
+```
+
+---
+
+## OCR & Vision
+
+Examples:
+
+```text
+OCR
+图片识别
+截图分析
+图表识别
+界面分析
+```
+
+---
+
+# Architecture
+
+## AI Routing
 
 ```text
                     AUTO
@@ -128,9 +188,81 @@ Workers AI Models
                     VISION
 ```
 
+## Service Layer
+
+```text
+                    Router
+                      │
+
+     ┌────────┬────────┬────────┬────────┬────────┐
+     │        │        │        │        │
+
+     ▼        ▼        ▼        ▼        ▼
+
+  Weather    FX      Stock    Crypto   Search
+```
+
 ---
 
-# Available Models
+# Hermes Agent Integration
+
+Cloudflare AI Model Router can be configured as the AI backend for Hermes Agent.
+
+```text
+Hermes Agent
+      │
+      ▼
+
+Cloudflare AI Model Router
+      │
+      ▼
+
+CHAT / ANALYST / CODER / VISION
+```
+
+Benefits:
+
+- OpenAI-compatible endpoint
+- Intelligent model routing
+- Centralized model management
+- Search integration
+- Vision support
+- Cost control
+
+---
+
+# WeChat Integration
+
+Cloudflare AI Model Router can be used with Hermes Gateway to build intelligent WeChat assistants.
+
+```text
+WeChat User
+      │
+      ▼
+
+Hermes Gateway
+      │
+      ▼
+
+Cloudflare AI Model Router
+      │
+      ▼
+
+AI Models + Built-in Services
+```
+
+Typical Use Cases:
+
+- Personal AI Assistant
+- Enterprise Assistant
+- Customer Service Bot
+- Knowledge Assistant
+- Coding Assistant
+- Agent Automation Workflows
+
+---
+
+# Supported Models
 
 ## CHAT
 
@@ -140,7 +272,7 @@ Optimized for:
 - Translation
 - Rewriting
 - Summarization
-- Content generation
+- Content Generation
 
 ---
 
@@ -148,12 +280,12 @@ Optimized for:
 
 Optimized for:
 
-- Technical analysis
-- Architecture discussions
 - Research
-- News lookup
-- Market analysis
-- General knowledge questions
+- Architecture Discussions
+- Market Analysis
+- News Lookup
+- Technical Analysis
+- General Knowledge
 
 ---
 
@@ -161,11 +293,11 @@ Optimized for:
 
 Optimized for:
 
-- Software development
+- Software Development
 - Debugging
 - Refactoring
-- Code review
-- Agent workflows
+- Code Review
+- Agent Workflows
 
 ---
 
@@ -174,54 +306,106 @@ Optimized for:
 Optimized for:
 
 - OCR
-- Screenshot analysis
-- Image understanding
-- Chart and UI analysis
-
----
-
-# Built-in Services
-
-The router includes several integrated services:
-
-```text
-Web Search
-
-Stock Market Lookup
-
-Cryptocurrency Prices
-
-Exchange Rates
-
-Weather Queries
-
-Date & Calendar Services
-
-OCR & Vision Processing
-```
+- Screenshot Analysis
+- Image Understanding
+- Chart Recognition
+- UI Analysis
 
 ---
 
 # Deployment
 
 ```bash
+npm install
 npx wrangler deploy
 ```
 
 ---
 
-# Documentation
+# Configuration
 
-Cloudflare configuration and environment variables:
+Cloudflare resources, bindings, KV namespaces, R2 buckets, environment variables and deployment settings:
 
 ```text
 docs/cloudflare-bindings.md
 ```
 
-Core router implementation:
+---
+
+# Project Structure
 
 ```text
-src/index.js
+cf-ai/
+│
+├── docs/
+│   └── cloudflare-bindings.md
+│
+├── src/
+│   └── cf-ai-router.js
+│   
+│
+├── wrangler.toml
+├── README.md
+└── release_notes.md
+```
+
+Current Worker Entry:
+
+```toml
+main = "src/cf-ai-router.js"
+```
+
+---
+
+# Verified Services
+
+```text
+✓ AI Chat
+✓ Weather
+✓ Exchange Rates
+✓ Stocks
+✓ Cryptocurrency
+✓ Search
+✓ OCR & Vision
+✓ SSE Streaming
+✓ OpenAI Compatible
+✓ Hermes Agent
+✓ WeChat Integration
+```
+
+---
+
+# Release Highlights
+
+## v1.1.1
+
+### Fixed
+
+- Fixed stock query false-positive routing
+- Fixed crypto routing conflicts
+- Fixed BTC / ETH / SOL / DOGE symbol matching
+- Fixed exchange-rate SSE streaming
+- Fixed stock SSE streaming
+- Fixed Hermes EmptyStreamError
+- Fixed Provider Service Error handling
+
+### Refactor
+
+- Added `replyText()` helper
+- Unified streaming and non-streaming responses
+- Improved router stability
+- Synced runtime entry files
+
+### Verified
+
+```text
+AI Chat
+Weather
+Exchange Rates
+Stocks
+Crypto
+Hermes WeChat
+SSE Streaming
 ```
 
 ---
@@ -237,53 +421,3 @@ https://github.com/hh000hh/CF-AI-Model-Router
 # License
 
 MIT
-
-## Supported Services
-
-### AI Chat
-
-Examples:
-
-- 你好
-- 翻译
-- 总结
-- 帮我写邮件
-
-### Weather
-
-Examples:
-
-- 上海天气
-- 北京天气
-
-### Exchange Rate
-
-Examples:
-
-- 美元汇率
-- 欧元汇率
-- USD/CNY
-- EUR/USD
-
-### Stocks
-
-Examples:
-
-- AAPL
-- TSLA
-- NVDA
-- Intel股价
-- TSLA行情
-
-### Crypto
-
-Examples:
-
-- BTC
-- ETH
-- SOL
-- DOGE
-- XRP
-- 比特币
-- 以太坊
-
