@@ -385,6 +385,8 @@ export default {
         query
       );
 
+      // MCP
+
       const matchedTool =
         detectMcpTool(
           query,
@@ -427,6 +429,91 @@ export default {
           requestedModel
         );
       }
+
+      // Date
+
+      console.error("SERVICE_DATE");
+
+      const dateResponse =
+        await handleDateTimeQuery(
+          query,
+          stream,
+          requestedModel,
+          env
+        );
+
+      if (dateResponse) {
+        return dateResponse;
+      }
+
+      // Weather
+
+      console.error("SERVICE_WEATHER");
+
+      if (
+        isWeatherQuery(
+          query,
+          env
+        )
+      ) {
+
+        return await handleWeather(
+          query,
+          env,
+          stream,
+          requestedModel
+        );
+
+      }
+
+      // FX
+
+      console.error("SERVICE_FX");
+
+      const fxResult =
+        await handleExchangeRate(
+          query,
+          env,
+          stream,
+          requestedModel
+        );
+
+      if (fxResult) {
+        return fxResult;
+      }
+
+      // Stock
+
+      console.error("SERVICE_STOCK");
+
+      const stockResult =
+        await handleStock(
+          query,
+          env,
+          stream,
+          requestedModel
+        );
+
+      if (stockResult) {
+        return stockResult;
+      }
+
+      // Crypto
+
+      console.error("SERVICE_CRYPTO");
+
+      const cryptoResult =
+        await handleCrypto(
+          query,
+          env,
+          stream,
+          requestedModel
+        );
+
+      if (cryptoResult) {
+        return cryptoResult;
+      }
+
 
       const cleanMessages =
         trimmedMessages
@@ -608,7 +695,7 @@ export default {
         )
       }
 
-      const tools =
+      let tools =
         Array.isArray(body.tools)
           ? body.tools
           : [];
@@ -706,7 +793,9 @@ export default {
 
       let model
 
-      const hasToolsRequest = Array.isArray(body.tools) && body.tools.length > 0;
+      const hasToolsRequest =
+        Array.isArray(tools) &&
+        tools.length > 0;
 
       if (hasToolsRequest) {
 
@@ -788,92 +877,6 @@ export default {
               keyword.toLowerCase()
             )
         )
-
-      // =====================
-      // CRYPTO / Stock Detection
-      // =====================
-
-      const cryptoMap =
-        JSON.parse(
-          env.CRYPTO_SYMBOLS || "{}"
-        );
-
-      const cryptoCodes =
-        Object.values(
-          cryptoMap
-        ).map(v =>
-          String(v).toUpperCase()
-        );
-
-      const rawQuery =
-        query.trim();
-
-      const symbol =
-        rawQuery.toUpperCase();
-
-      const stockKeywords =
-        String(
-          env.STOCK_KEYWORDS || ""
-        )
-          .split(",")
-          .map(v => v.trim())
-          .filter(Boolean);
-
-      const hasStockKeyword =
-        stockKeywords.some(
-          keyword =>
-            rawQuery
-              .toLowerCase()
-              .includes(
-                keyword.toLowerCase()
-              )
-        );
-
-      const normalizedQuery =
-        query.trim().toUpperCase();
-
-      const isTickerLike =
-        /^[A-Z]{1,5}$/.test(symbol)
-        &&
-        normalizedQuery === symbol
-        &&
-        symbol.length >= 2
-        &&
-        symbol.length <= 5;
-
-      const isChat =
-        isChatQuery(
-          query,
-          env
-        );
-
-      const isStockRequest =
-        !isChat
-        &&
-        (
-          hasStockKeyword
-          ||
-          (
-            isTickerLike &&
-            !cryptoCodes.includes(symbol)
-          )
-        );
-
-      // =====================
-      // Date / Time Intercept
-      // =====================
-
-      const dateResponse =
-        await handleDateTimeQuery(
-          query,
-          stream,
-          requestedModel,
-          env
-        );
-
-      if (dateResponse) {
-        return dateResponse;
-      }
 
       // =====================
       // Continue Business Logic
@@ -1146,22 +1149,6 @@ export default {
           const shortQuery =
             query.trim()
 
-          // =====================
-          // Date / Time Intercept
-          // =====================
-
-          const dateResponse =
-            await handleDateTimeQuery(
-              query,
-              stream,
-              requestedModel,
-              env
-            );
-
-          if (dateResponse) {
-            return dateResponse;
-          }
-
           searchContext = ""
           let rankedResults = []
 
@@ -1336,594 +1323,6 @@ ${searchContext}
           );
 
         } else {
-
-          const dateResponse =
-            await handleDateTimeQuery(
-              query,
-              stream,
-              requestedModel,
-              env
-            );
-
-          if (dateResponse) {
-            return dateResponse;
-          }
-
-          // =====================
-          // Weather
-          // =====================
-
-          if (
-            isWeatherQuery(
-              query
-            )
-          ) {
-
-            return await handleWeather(
-              query,
-              env,
-              stream,
-              requestedModel
-            )
-
-          }
-
-          // =====================
-          // Crypto
-          // =====================
-
-          if (
-            isCryptoQuery(
-              query,
-              env
-            )
-          ) {
-
-            const cryptoResult =
-              await handleCrypto(
-                query,
-                env,
-                stream,
-                requestedModel
-              )
-
-            if (cryptoResult) {
-
-              return cryptoResult
-
-            }
-
-          }
-
-          // =====================
-          // Exchange Rate & Stock Price
-          // =====================
-
-          if (
-            isExchangeRateQuery(
-              query,
-              env
-            )
-          ) {
-
-            const fxResult =
-              await handleExchangeRate(
-                query,
-                env,
-                stream,
-                requestedModel
-              )
-
-            if (fxResult) {
-              return fxResult
-            }
-          }
-
-          if (
-            isStockRequest
-          ) {
-
-            const historyKeywords =
-              (env.STOCK_HISTORY_KEYWORDS || "")
-                .split(",")
-                .map(v => v.trim())
-                .filter(Boolean);
-
-            const historyRequest =
-              historyKeywords.length > 0 &&
-              historyKeywords.some(
-                keyword =>
-                  query.includes(keyword)
-              );
-
-            const company =
-              cleanStockQuery(
-                query,
-                env
-              );
-
-            const timeUnits =
-              (env.TIME_UNIT || "")
-                .split(",")
-                .map(v => v.trim())
-                .filter(Boolean)
-
-            const hasTimeWord =
-              timeUnits.some(
-                word => company.includes(word)
-              )
-
-            const hasChineseCompany =
-              /[\u4e00-\u9fa5]{2,}/.test(
-                company
-              );
-
-            const hasEnglishCompany =
-              /[A-Za-z]{2,}/.test(
-                company
-              );
-
-            /**
-             * 支持：
-             * 600519
-             * 300750
-             * 000001
-             * 0700
-             * 9988
-             */
-            const hasStockCode =
-              /^\d{4,6}$/.test(
-                company
-              );
-
-            const hasCompanyName =
-              hasChineseCompany ||
-              hasEnglishCompany ||
-              hasStockCode;
-
-            const isNoCompanyQuery =
-
-              !hasCompanyName ||
-
-              (
-                hasTimeWord &&
-                !hasEnglishCompany &&
-                !hasStockCode
-              );
-
-            console.error(
-              "STOCK_QUERY=" +
-              query
-            );
-
-            console.error(
-              "CLEAN_COMPANY=" +
-              company
-            );
-
-            console.error(
-              "HAS_CHINESE=" +
-              hasChineseCompany
-            );
-
-            console.error(
-              "HAS_ENGLISH=" +
-              hasEnglishCompany
-            );
-
-            console.error(
-              "HAS_STOCK_CODE=" +
-              hasStockCode
-            );
-
-            console.error(
-              "HAS_COMPANY_NAME=" +
-              hasCompanyName
-            );
-
-            console.error(
-              "IS_NO_COMPANY_QUERY=" +
-              isNoCompanyQuery
-            );
-
-            console.error(
-              "LOOKS_LIKE_STOCK=" +
-              looksLikeStockLookup(
-                query
-              )
-            );
-
-            if (isNoCompanyQuery) {
-
-              const result =
-                "请提供股票名称或代码，例如：Intel股价、SNAP一周股价、TSLA行情。"
-
-              if (stream) {
-                return sseText(result)
-              }
-
-              return jsonOpenAI(
-                result,
-                requestedModel
-              )
-
-            }
-
-            let symbol = null
-
-            // =====================
-            // Symbol Cache Read
-            // =====================
-
-            try {
-
-              const cacheKey =
-                `verified:${normalizeCompanyName(
-                  company
-                )}`;
-
-              const cachedSymbol =
-                await env.SYMBOL_CACHE.get(
-                  cacheKey
-                );
-
-              if (cachedSymbol) {
-
-                const companyMatch =
-                  await validateSymbolCompany(
-                    cachedSymbol,
-                    company,
-                    env
-                  );
-
-                if (companyMatch) {
-
-                  symbol =
-                    cachedSymbol;
-
-                } else {
-
-                  await env.SYMBOL_CACHE.delete(
-                    cacheKey
-                  );
-
-                }
-
-              }
-
-            } catch (e) {
-
-              console.error(
-                "SYMBOL CACHE READ ERROR:",
-                e
-              );
-
-            }
-
-            // =====================
-            // Fallback Search
-            // =====================
-
-            if (
-              !symbol &&
-              looksLikeStockLookup(query)
-            ) {
-
-              symbol =
-                await searchSymbol(
-                  query,
-                  env
-                )
-
-              console.error(
-                "SEARCH_SYMBOL_RESULT=" +
-                symbol
-              );
-
-              if (symbol) {
-
-                const verify =
-                  await getStockPrice(
-                    symbol,
-                    env
-                  );
-
-                // 已识别中国市场代码
-                // 不允许继续Web Search
-
-                if (
-                  verify?.codeOnly
-                ) {
-
-                  return stream
-                    ? sseText(
-                      verify.message
-                    )
-                    : jsonOpenAI(
-                      verify.message,
-                      requestedModel
-                    );
-
-                }
-
-                if (
-                  !verify ||
-                  typeof verify.c !== "number" ||
-                  verify.c <= 0
-                ) {
-
-                  symbol = null;
-
-                }
-
-              }
-
-            }
-
-            // =====================
-            // Fallback
-            // Web Search
-            // =====================
-
-            if (
-              !symbol &&
-              looksLikeStockLookup(query)
-            ) {
-
-              const company =
-                cleanStockQuery(
-                  query,
-                  env
-                );
-
-              const candidates =
-                await searchSymbolFromWeb(
-                  company,
-                  env
-                )
-
-              let bestSymbol =
-                null
-
-              for (const candidate of candidates) {
-
-                const verify =
-                  await getStockPrice(
-                    candidate.symbol,
-                    env
-                  );
-
-                if (
-                  !verify ||
-                  typeof verify.c !== "number" ||
-                  verify.c <= 0 ||
-                  verify.t <= 0
-                ) {
-                  continue;
-                }
-
-                bestSymbol =
-                  candidate.symbol;
-
-                console.error(
-                  "WEB_SYMBOL_PICKED=" +
-                  bestSymbol
-                );
-
-                try {
-
-                  await env.SYMBOL_CACHE.put(
-                    `verified:${normalizeCompanyName(company)}`,
-                    bestSymbol,
-                    {
-                      expirationTtl: 604800
-                    }
-                  );
-
-                } catch (e) {
-
-                  console.error(
-                    "SYMBOL CACHE WRITE ERROR:",
-                    e
-                  );
-
-                }
-
-                break;
-
-              }
-
-
-              symbol =
-                bestSymbol
-
-            }
-
-            // =====================
-            // 最终失败
-            // =====================
-
-            if (!symbol) {
-
-              const company =
-                cleanStockQuery(
-                  query,
-                  env
-                );
-
-              const result =
-                `${company} 未找到可验证的股票代码。`
-
-              if (stream) {
-                return sseText(result)
-              }
-
-              return jsonOpenAI(
-                result,
-                requestedModel
-              )
-
-            }
-
-            let historyFallback =
-              false
-
-            if (historyRequest) {
-
-              const history =
-                await getStockHistory(
-                  symbol,
-                  env
-                )
-
-              if (
-                history?.unsupported
-              ) {
-
-                if (stream) {
-                  return sseText(
-                    history.message
-                  );
-                }
-
-                return jsonOpenAI(
-                  history.message,
-                  requestedModel
-                );
-
-              }
-
-              if (
-                history &&
-                history.c &&
-                history.c.length
-              ) {
-
-                const prices =
-                  history.c
-                    .slice(-7)
-                    .join(" → ")
-
-                const result =
-                  `${symbol}
-
-            最近7日价格：
-
-${prices}
-
-            最高：
-${Math.max(...history.c)}
-
-            最低：
-${Math.min(...history.c)} `
-
-                if (stream) {
-                  return sseText(result)
-                }
-
-                return jsonOpenAI(
-                  result,
-                  requestedModel
-                )
-
-              }
-
-              historyFallback =
-                true
-
-            }
-
-            const stock =
-              await getStockPrice(
-                symbol,
-                env
-              )
-
-            if (
-              stock?.codeOnly
-            ) {
-
-              if (stream) {
-                return sseText(
-                  stock.message
-                );
-              }
-
-              return jsonOpenAI(
-                stock.message,
-                requestedModel
-              );
-
-            }
-
-            if (
-              stock?.error ===
-              "RATE_LIMIT"
-            ) {
-
-              const result =
-                `行情服务访问频率超限，请稍后再试。
-
-            股票代码：
-${symbol} `
-
-              if (stream) {
-                return sseText(result)
-              }
-
-              return jsonOpenAI(
-                result,
-                requestedModel
-              )
-
-            }
-
-            if (
-              stock &&
-              stock.c !== undefined &&
-              stock.t
-            ) {
-
-              const result =
-                `${historyFallback
-                  ? "历史数据暂不可用，已自动切换为实时行情。\n\n"
-                  : ""
-                }${symbol}
-
-现价：${stock.c}
-涨跌：${stock.d}
-涨跌幅：${stock.dp}%
-最高：${stock.h}
-最低：${stock.l}`;
-
-              if (stream) {
-                return sseText(result)
-              }
-
-              return jsonOpenAI(
-                result,
-                requestedModel
-              )
-
-            }
-
-            // =====================
-            // API 数据或失败
-            // =====================
-
-            const result =
-              `${symbol} 未获取到有效行情数据。`;
-
-            if (stream) {
-              return sseText(result);
-            }
-
-            return jsonOpenAI(
-              result,
-              requestedModel
-            );
-
-          }
 
           // =====================
           // Search after stock sevice
@@ -4111,66 +3510,6 @@ async function getLastImageState(
 }
 
 // =====================
-// JSON Helper
-// =====================
-
-function json(
-  data,
-  status = 200
-) {
-  return new Response(
-    JSON.stringify(data),
-    {
-      status,
-      headers: {
-        "Content-Type":
-          "application/json; charset=utf-8",
-        "Cache-Control":
-          "no-store"
-      }
-    }
-  )
-}
-
-function jsonOpenAI(
-  content,
-  model
-) {
-
-  return json({
-
-    id:
-      "chatcmpl-" +
-      crypto.randomUUID(),
-
-    object:
-      "chat.completion",
-
-    created:
-      Math.floor(Date.now() / 1000),
-
-    model,
-
-    choices: [
-      {
-        index: 0,
-
-        message: {
-          role: "assistant",
-          content
-        },
-
-        logprobs: null,
-
-        finish_reason: "stop"
-      }
-    ]
-
-  })
-
-}
-
-// =====================
 // Search Helper
 // =====================
 
@@ -5479,7 +4818,7 @@ function normalizeCompanyName(
 }
 
 // =====================
-// SSE Helper
+// SSE and Json Helper
 // =====================
 
 function sseText(content) {
@@ -5488,7 +4827,7 @@ function sseText(content) {
     "chatcmpl-" +
     crypto.randomUUID();
 
-  const chunk1 = {
+  const chunk = {
     id,
     object: "chat.completion.chunk",
     choices: [
@@ -5503,7 +4842,7 @@ function sseText(content) {
     ]
   };
 
-  const chunk2 = {
+  const stop = {
     id,
     object: "chat.completion.chunk",
     choices: [
@@ -5515,21 +4854,21 @@ function sseText(content) {
     ]
   };
 
-  const body =
-    `data: ${JSON.stringify(chunk1)}\n\n` +
-    `data: ${JSON.stringify(chunk2)}\n\n` +
-    `data: [DONE]\n\n`;
-
-  return new Response(body, {
-    headers: {
-      "Content-Type":
-        "text/event-stream; charset=utf-8",
-      "Cache-Control":
-        "no-cache",
-      "Connection":
-        "keep-alive"
+  return new Response(
+    `data: ${JSON.stringify(chunk)}\n\n` +
+    `data: ${JSON.stringify(stop)}\n\n` +
+    `data: [DONE]\n\n`,
+    {
+      headers: {
+        "Content-Type":
+          "text/event-stream; charset=utf-8",
+        "Cache-Control":
+          "no-cache",
+        "Connection":
+          "keep-alive"
+      }
     }
-  });
+  );
 
 }
 
@@ -5568,6 +4907,79 @@ function extractMessageText(
   }
 
   return "";
+
+}
+
+function replyText(
+  content,
+  stream,
+  model
+) {
+
+  if (stream) {
+    return sseText(content);
+  }
+
+  return jsonOpenAI(
+    content,
+    model
+  );
+
+}
+
+function json(
+  data,
+  status = 200
+) {
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        "Content-Type":
+          "application/json; charset=utf-8",
+        "Cache-Control":
+          "no-store"
+      }
+    }
+  )
+}
+
+function jsonOpenAI(
+  content,
+  model
+) {
+
+  return json({
+
+    id:
+      "chatcmpl-" +
+      crypto.randomUUID(),
+
+    object:
+      "chat.completion",
+
+    created:
+      Math.floor(Date.now() / 1000),
+
+    model,
+
+    choices: [
+      {
+        index: 0,
+
+        message: {
+          role: "assistant",
+          content
+        },
+
+        logprobs: null,
+
+        finish_reason: "stop"
+      }
+    ]
+
+  })
 
 }
 
@@ -5640,27 +5052,51 @@ async function cachePut(
 // Stock Service
 // =====================
 
-function looksLikeStockLookup(
-  query
-) {
+function looksLikeStockLookup(query) {
 
-  query =
-    String(query || "")
-      .trim();
+  query = String(query || "")
+    .trim()
+    .toUpperCase();
 
   if (!query) {
     return false;
   }
 
-  const words =
-    query
-      .split(/\s+/)
-      .filter(Boolean);
+  // 过长直接排除
+  if (query.length > 20) {
+    return false;
+  }
 
-  return (
-    words.length <= 3 &&
-    query.length <= 40
-  );
+  // 美股
+  // AAPL NVDA TSLA AMD META
+  if (/^[A-Z]{2,5}$/.test(query)) {
+    return true;
+  }
+
+  // A股
+  // 600519 000001 300750
+  if (/^(?:0|3|6)\d{5}$/.test(query)) {
+    return true;
+  }
+
+  // 港股
+  // 00700 09988 03888
+  if (/^0\d{4}$/.test(query)) {
+    return true;
+  }
+
+  // 带交易所后缀
+  // 600519.SH
+  // 000001.SZ
+  // 00700.HK
+  if (
+    /^(?:\d{6}\.(?:SH|SZ)|\d{5}\.HK)$/i
+      .test(query)
+  ) {
+    return true;
+  }
+
+  return false;
 
 }
 
@@ -6805,8 +6241,1042 @@ async function searchSymbol(
 }
 
 // =====================
-// Other Services
+// Service Handler
 // =====================
+
+async function handleStock(
+  query,
+  env,
+  stream,
+  requestedModel
+) {
+
+  const cryptoCodes =
+    Object.values(
+      JSON.parse(
+        env.CRYPTO_SYMBOLS || "{}"
+      )
+    ).map(v =>
+      String(v).toUpperCase()
+    );
+
+  const querySymbol =
+    String(query || "")
+      .trim()
+      .toUpperCase();
+
+  if (
+    cryptoCodes.includes(
+      querySymbol
+    )
+  ) {
+
+    console.error(
+      "STOCK_SKIP_CRYPTO=" +
+      querySymbol
+    );
+
+    return null;
+
+  }
+
+  const stockLike =
+    looksLikeStockLookup(query)
+    ||
+    isStockQuery(query, env);
+
+  console.error(
+    "HANDLE_STOCK_QUERY=" +
+    query
+  );
+
+  console.error(
+    "HANDLE_STOCK_LIKE=" +
+    stockLike
+  );
+
+  if (!stockLike) {
+    return null;
+  }
+
+  const historyKeywords =
+    (env.STOCK_HISTORY_KEYWORDS || "")
+      .split(",")
+      .map(v => v.trim())
+      .filter(Boolean);
+
+  const historyRequest =
+    historyKeywords.some(
+      keyword =>
+        query.includes(keyword)
+    );
+
+  const company =
+    cleanStockQuery(
+      query,
+      env
+    );
+
+  const timeUnits =
+    (env.TIME_UNIT || "")
+      .split(",")
+      .map(v => v.trim())
+      .filter(Boolean);
+
+  const hasTimeWord =
+    timeUnits.some(
+      word =>
+        company.includes(word)
+    );
+
+  const hasChineseCompany =
+    /[\u4e00-\u9fa5]{2,}/
+      .test(company);
+
+  const hasEnglishCompany =
+    /[A-Za-z]{2,}/
+      .test(company);
+
+  const hasStockCode =
+    /^\d{4,6}$/
+      .test(company);
+
+  const hasCompanyName =
+    hasChineseCompany ||
+    hasEnglishCompany ||
+    hasStockCode;
+
+  const isNoCompanyQuery =
+
+    !hasCompanyName ||
+
+    (
+      hasTimeWord &&
+      !hasEnglishCompany &&
+      !hasStockCode
+    );
+
+  if (isNoCompanyQuery) {
+
+    return replyText(
+      "请提供股票名称或代码，例如：Intel股价、SNAP一周股价、TSLA行情。",
+      stream,
+      requestedModel
+    );
+
+  }
+
+  let symbol = null;
+
+  // =====================
+  // Cache
+  // =====================
+
+  try {
+
+    const cacheKey =
+      `verified:${normalizeCompanyName(
+        company
+      )
+      } `;
+
+    const cachedSymbol =
+      await env.SYMBOL_CACHE.get(
+        cacheKey
+      );
+
+    if (cachedSymbol) {
+
+      const companyMatch =
+        await validateSymbolCompany(
+          cachedSymbol,
+          company,
+          env
+        );
+
+      if (companyMatch) {
+
+        symbol =
+          cachedSymbol;
+
+        console.error(
+          "SYMBOL_CACHE_HIT=" +
+          symbol
+        );
+
+      } else {
+
+        await env.SYMBOL_CACHE.delete(
+          cacheKey
+        );
+
+      }
+
+    }
+
+  } catch (e) {
+
+    console.error(
+      "SYMBOL CACHE READ ERROR:",
+      e
+    );
+
+  }
+
+  // =====================
+  // Search Symbol
+  // =====================
+
+  if (!symbol) {
+
+    symbol =
+      await searchSymbol(
+        query,
+        env
+      );
+
+    console.error(
+      "SEARCH_SYMBOL_RESULT=" +
+      symbol
+    );
+
+    if (symbol) {
+
+      const verify =
+        await getStockPrice(
+          symbol,
+          env
+        );
+
+      if (
+        verify?.codeOnly
+      ) {
+
+        return replyText(
+          verify.message,
+          stream,
+          requestedModel
+        );
+
+      }
+
+      if (
+        !verify ||
+        typeof verify.c !==
+        "number" ||
+        verify.c <= 0
+      ) {
+
+        symbol = null;
+
+      }
+
+    }
+
+  }
+
+  // =====================
+  // Web Search Fallback
+  // =====================
+
+  if (!symbol) {
+
+    const candidates =
+      await searchSymbolFromWeb(
+        company,
+        env
+      );
+
+    let bestSymbol =
+      null;
+
+    for (
+      const candidate of candidates
+    ) {
+
+      const verify =
+        await getStockPrice(
+          candidate.symbol,
+          env
+        );
+
+      if (
+        !verify ||
+        typeof verify.c !==
+        "number" ||
+        verify.c <= 0 ||
+        verify.t <= 0
+      ) {
+        continue;
+      }
+
+      bestSymbol =
+        candidate.symbol;
+
+      console.error(
+        "WEB_SYMBOL_PICKED=" +
+        bestSymbol
+      );
+
+      try {
+
+        await env.SYMBOL_CACHE.put(
+          `verified:${normalizeCompanyName(company)} `,
+          bestSymbol,
+          {
+            expirationTtl: 604800
+          }
+        );
+
+      } catch (e) {
+
+        console.error(
+          "SYMBOL CACHE WRITE ERROR:",
+          e
+        );
+
+      }
+
+      break;
+
+    }
+
+    symbol =
+      bestSymbol;
+
+  }
+
+  if (!symbol) {
+
+    return replyText(
+      `${company} 未找到可验证的股票代码。`,
+      stream,
+      requestedModel
+    );
+
+  }
+
+  let historyFallback =
+    false;
+
+  // =====================
+  // History
+  // =====================
+
+  if (historyRequest) {
+
+    const history =
+      await getStockHistory(
+        symbol,
+        env
+      );
+
+    if (
+      history?.unsupported
+    ) {
+
+      return replyText(
+        history.message,
+        stream,
+        requestedModel
+      );
+
+    }
+
+    if (
+      history &&
+      history.c &&
+      history.c.length
+    ) {
+
+      const prices =
+        history.c
+          .slice(-7)
+          .join(" → ");
+
+      const result =
+        `${symbol}
+
+  最近7日价格：
+
+${prices}
+
+  最高：
+${Math.max(...history.c)}
+
+  最低：
+${Math.min(...history.c)} `;
+
+      return replyText(
+        result,
+        stream,
+        requestedModel
+      );
+
+    }
+
+    historyFallback =
+      true;
+
+  }
+
+  // =====================
+  // Realtime
+  // =====================
+
+  const stock =
+    await getStockPrice(
+      symbol,
+      env
+    );
+
+  if (
+    stock?.codeOnly
+  ) {
+
+    return replyText(
+      stock.message,
+      stream,
+      requestedModel
+    );
+
+  }
+
+  if (
+    stock?.error ===
+    "RATE_LIMIT"
+  ) {
+
+    return replyText(
+      `行情服务访问频率超限，请稍后再试。
+
+  股票代码：${symbol} `,
+      stream,
+      requestedModel
+    );
+
+  }
+
+  if (
+    stock &&
+    stock.c !== undefined &&
+    stock.t
+  ) {
+
+    const result =
+      `${historyFallback
+        ? "历史数据暂不可用，已自动切换为实时行情。\n\n"
+        : ""
+      } 股票行情
+
+  代码：${symbol}
+
+  现价：${stock.c}
+  涨跌：${stock.d}
+  涨跌幅：${stock.dp}%
+  最高：${stock.h}
+  最低：${stock.l} `;
+
+    console.error(
+      "STOCK_SUCCESS_RETURN=" +
+      result
+    );
+
+    console.error(
+      "STOCK_SUCCESS_SYMBOL=" +
+      symbol
+    );
+
+    return replyText(
+      result,
+      stream,
+      requestedModel
+    );
+
+  }
+
+  return replyText(
+    `${symbol} 未获取到有效行情数据。`,
+    stream,
+    requestedModel
+  );
+
+}
+
+async function handleCrypto(
+  query,
+  env,
+  stream,
+  requestedModel
+) {
+
+  if (
+    !isCryptoQuery(
+      query,
+      env
+    )
+  ) {
+    return null;
+  }
+
+  console.error(
+    "HANDLE_CRYPTO_QUERY=" +
+    query
+  );
+
+  const cryptoMap =
+    JSON.parse(
+      env.CRYPTO_SYMBOLS || "{}"
+    );
+
+  const normalizedQuery =
+    String(query || "")
+      .trim()
+      .toUpperCase();
+
+  let symbol = null;
+
+  for (
+    const [name, code]
+    of Object.entries(
+      cryptoMap
+    )
+  ) {
+
+    // 中文名称
+    if (
+      /[\u4e00-\u9fa5]/.test(name)
+    ) {
+
+      if (
+        query.includes(name)
+      ) {
+
+        symbol = code;
+        break;
+
+      }
+
+      continue;
+
+    }
+
+    // 英文代码
+    if (
+      normalizedQuery ===
+      name.toUpperCase()
+    ) {
+
+      symbol = code;
+      break;
+
+    }
+
+  }
+
+  if (!symbol) {
+
+    console.error(
+      "CRYPTO_SYMBOL_NOT_FOUND"
+    );
+
+    return null;
+
+  }
+
+  const price =
+    await getCryptoPrice(
+      symbol,
+      env
+    );
+
+  if (
+    price === null ||
+    price === undefined
+  ) {
+
+    return replyText(
+      `${symbol} 行情获取失败`,
+      stream,
+      requestedModel
+    );
+
+  }
+
+  const updateTime =
+    new Date()
+      .toLocaleString(
+        "zh-CN",
+        {
+          timeZone:
+            "Asia/Shanghai"
+        }
+      );
+
+  const result =
+    `${symbol} ${price} USDT ${updateTime}`;
+
+  console.error(
+    "HANDLE_CRYPTO_SUCCESS=" +
+    symbol
+  );
+
+  return replyText(
+    result,
+    stream,
+    requestedModel
+  );
+
+}
+
+async function getCryptoPrice(
+  symbol,
+  env
+) {
+
+  const cacheKey =
+    `crypto: ${symbol} `
+
+  try {
+
+    const cached =
+      await env.SYMBOL_CACHE.get(
+        cacheKey
+      )
+
+    if (cached) {
+
+      return cached
+
+    }
+
+  } catch (e) {
+
+    console.error(
+      "CRYPTO CACHE READ ERROR:",
+      e
+    )
+
+  }
+
+  try {
+
+    const url =
+      `https://www.okx.com/api/v5/market/ticker?instId=${symbol}-USDT`
+
+    const resp =
+      await fetch(url)
+
+    if (!resp.ok) {
+
+      const text =
+        await resp.text()
+
+      return null
+
+    }
+
+    const data =
+      await resp.json()
+
+    const price =
+      data?.data?.[0]?.last ||
+      null
+
+    if (!price) {
+
+      return null
+
+    }
+
+    try {
+
+      await env.SYMBOL_CACHE.put(
+        cacheKey,
+        price,
+        {
+          expirationTtl: 300
+        }
+      )
+
+    } catch (e) {
+
+      console.error(
+        "CRYPTO CACHE WRITE ERROR:",
+        e
+      )
+
+    }
+
+    return price
+
+  } catch (e) {
+
+    console.error(
+      "CRYPTO FETCH ERROR:",
+      e
+    )
+
+    return null
+
+  }
+
+}
+
+async function handleExchangeRate(
+  query,
+  env,
+  stream,
+  requestedModel
+) {
+
+  console.error(
+    "HANDLE_FX_QUERY=" +
+    query
+  );
+
+  if (
+    !isExchangeRateQuery(
+      query,
+      env
+    )
+  ) {
+
+    console.error(
+      "HANDLE_FX_SKIP"
+    );
+
+    return null;
+
+  }
+
+  console.error(
+    "HANDLE_FX_MATCH"
+  );
+
+  const currencyMap =
+    JSON.parse(
+      env.FX_CURRENCIES || "{}"
+    );
+
+  // =====================
+  // 全部汇率
+  // =====================
+
+  if (
+    /^(汇率|全部汇率|所有汇率|实时汇率)$/i
+      .test(
+        query.trim()
+      )
+  ) {
+
+    const rates =
+      await getExchangeRate(
+        "USD",
+        "*",
+        env
+      );
+
+    if (
+      !rates ||
+      typeof rates !== "object" ||
+      Object.keys(rates).length === 0
+    ) {
+
+      return replyText(
+        "汇率获取失败",
+        stream,
+        requestedModel
+      );
+
+    }
+
+    const reverseMap =
+      Object.fromEntries(
+        Object.entries(
+          currencyMap
+        ).map(
+          ([name, code]) => [
+            code,
+            name
+          ]
+        )
+      );
+
+    const updateTime =
+      new Date()
+        .toLocaleString(
+          "zh-CN",
+          {
+            timeZone:
+              "Asia/Shanghai"
+          }
+        );
+
+    const rows =
+      Object.entries(rates)
+        .sort(
+          ([a], [b]) =>
+            a.localeCompare(b)
+        )
+        .map(
+          ([code, value]) => {
+
+            const cname =
+              reverseMap[code] ||
+              code;
+
+            return `${cname}(${code}): ${Number(value).toFixed(6)}`;
+
+          }
+        );
+
+    const result =
+      `主要货币汇率（基准 USD）
+
+${rows.join("\n")}
+
+━━━━━━━━━━━━
+共 ${Object.keys(rates).length} 种货币
+
+更新时间：
+${updateTime}`;
+
+    console.error(
+      "HANDLE_FX_SUCCESS=ALL"
+    );
+
+    return replyText(
+      result,
+      stream,
+      requestedModel
+    );
+
+  }
+
+  let from = null;
+  let to = "CNY";
+
+  // =====================
+  // USD/CNY
+  // EUR/USD
+  // =====================
+
+  const pairMatch =
+    query.match(
+      /\b([A-Z]{3})\s*\/\s*([A-Z]{3})\b/i
+    );
+
+  if (pairMatch) {
+
+    const validCurrencies =
+      Object.values(
+        currencyMap
+      );
+
+    const fromCode =
+      pairMatch[1]
+        .toUpperCase();
+
+    const toCode =
+      pairMatch[2]
+        .toUpperCase();
+
+    if (
+      validCurrencies.includes(
+        fromCode
+      ) &&
+      validCurrencies.includes(
+        toCode
+      )
+    ) {
+
+      from = fromCode;
+      to = toCode;
+
+    }
+
+  }
+
+  // =====================
+  // 中文货币名称
+  // =====================
+
+  if (!from) {
+
+    for (
+      const [name, code]
+      of Object.entries(
+        currencyMap
+      )
+    ) {
+
+      if (
+        query.includes(
+          name
+        )
+      ) {
+
+        from = code;
+        break;
+
+      }
+
+    }
+
+  }
+
+  // =====================
+  // ISO货币代码
+  // =====================
+
+  if (!from) {
+
+    const validCurrencies =
+      Object.values(
+        currencyMap
+      );
+
+    const codeMatches =
+      query
+        .toUpperCase()
+        .match(
+          /\b[A-Z]{3}\b/g
+        );
+
+    if (codeMatches) {
+
+      const found =
+        codeMatches.find(
+          code =>
+            validCurrencies.includes(
+              code
+            )
+        );
+
+      if (found) {
+        from = found;
+      }
+
+    }
+
+  }
+
+  // =====================
+  // 未识别
+  // =====================
+
+  if (!from) {
+
+    const currencyList =
+      Object.entries(
+        currencyMap
+      )
+        .map(
+          ([name, code]) =>
+            `${name} ${code}`
+        )
+        .join("\n");
+
+    const result =
+      `支持查询的货币：
+
+${currencyList}
+
+示例：
+
+美元汇率
+欧元汇率
+日元汇率
+
+USD/CNY
+EUR/USD
+GBP/CNY
+
+输入：
+
+汇率
+全部汇率
+所有汇率
+
+可查看全部货币汇率`;
+
+    return replyText(
+      result,
+      stream,
+      requestedModel
+    );
+
+  }
+
+  const rate =
+    await getExchangeRate(
+      from,
+      to,
+      env
+    );
+
+  if (
+    rate === null ||
+    rate === undefined
+  ) {
+
+    return replyText(
+      `${from}/${to} 汇率获取失败`,
+      stream,
+      requestedModel
+    );
+
+  }
+
+  const reverseMap =
+    Object.fromEntries(
+      Object.entries(
+        currencyMap
+      ).map(
+        ([k, v]) => [
+          v,
+          k
+        ]
+      )
+    );
+
+  const updateTime =
+    new Date()
+      .toLocaleString(
+        "zh-CN",
+        {
+          timeZone:
+            "Asia/Shanghai"
+        }
+      );
+
+  const result =
+    `${reverseMap[from] || from}汇率
+
+货币对：
+${from}/${to}
+
+最新汇率：
+${Number(rate).toFixed(6)}
+
+更新时间：
+${updateTime}`;
+
+  console.error(
+    "HANDLE_FX_SUCCESS=" +
+    from +
+    "/" +
+    to
+  );
+
+  return replyText(
+    result,
+    stream,
+    requestedModel
+  );
+
+}
 
 async function getExchangeRate(
   from,
@@ -6979,97 +7449,123 @@ async function getExchangeRate(
 
 }
 
-async function getCryptoPrice(
-  symbol,
-  env
+async function handleWeather(
+  query,
+  env,
+  stream,
+  requestedModel
 ) {
 
-  const cacheKey =
-    `crypto:${symbol}`
+  const city =
+    extractCity(query)
 
-  try {
+  if (!city) {
 
-    const cached =
-      await env.SYMBOL_CACHE.get(
-        cacheKey
-      )
+    const result =
+      "未识别到城市名称"
 
-    if (cached) {
-
-      return cached
-
+    if (stream) {
+      return sseText(result)
     }
 
-  } catch (e) {
-
-    console.error(
-      "CRYPTO CACHE READ ERROR:",
-      e
+    return jsonOpenAI(
+      result,
+      requestedModel
     )
 
   }
 
-  try {
-
-    const url =
-      `https://www.okx.com/api/v5/market/ticker?instId=${symbol}-USDT`
-
-    const resp =
-      await fetch(url)
-
-    if (!resp.ok) {
-
-      const text =
-        await resp.text()
-
-      return null
-
-    }
-
-    const data =
-      await resp.json()
-
-    const price =
-      data?.data?.[0]?.last ||
-      null
-
-    if (!price) {
-
-      return null
-
-    }
-
-    try {
-
-      await env.SYMBOL_CACHE.put(
-        cacheKey,
-        price,
-        {
-          expirationTtl: 300
-        }
-      )
-
-    } catch (e) {
-
-      console.error(
-        "CRYPTO CACHE WRITE ERROR:",
-        e
-      )
-
-    }
-
-    return price
-
-  } catch (e) {
-
-    console.error(
-      "CRYPTO FETCH ERROR:",
-      e
+  const weather =
+    await getWeather(
+      city,
+      env
     )
 
-    return null
+  if (!weather) {
+
+    const result =
+      `${city}天气信息获取失败`
+
+    if (stream) {
+      return sseText(result)
+    }
+
+    return jsonOpenAI(
+      result,
+      requestedModel
+    )
 
   }
+
+  const sunrise =
+    new Date(
+      weather.sys?.sunrise * 1000
+    ).toLocaleTimeString(
+      "zh-CN",
+      {
+        timeZone:
+          "Asia/Shanghai",
+        hour: "2-digit",
+        minute: "2-digit"
+      }
+    )
+
+  const sunset =
+    new Date(
+      weather.sys?.sunset * 1000
+    ).toLocaleTimeString(
+      "zh-CN",
+      {
+        timeZone:
+          "Asia/Shanghai",
+        hour: "2-digit",
+        minute: "2-digit"
+      }
+    )
+
+  const result =
+    `${city}天气
+
+位置：
+${weather.locationName}
+
+经纬度：
+${weather.latitude},
+${weather.longitude}
+
+天气：
+${weather.weather?.[0]?.description}
+
+当前温度：
+${weather.main?.temp}°C
+
+体感温度：
+${weather.main?.feels_like}°C
+
+湿度：
+${weather.main?.humidity}%
+
+风速：
+${weather.wind?.speed} m/s
+
+日出：
+${sunrise}
+
+日落：
+${sunset}`
+
+  if (stream) {
+
+    return sseText(
+      result
+    )
+
+  }
+
+  return jsonOpenAI(
+    result,
+    requestedModel
+  )
 
 }
 
@@ -7212,612 +7708,6 @@ function extractCity(
     )
 
     .trim()
-
-}
-
-// =====================
-// Service Handler
-// =====================
-
-async function handleWeather(
-  query,
-  env,
-  stream,
-  requestedModel
-) {
-
-  const city =
-    extractCity(query)
-
-  if (!city) {
-
-    const result =
-      "未识别到城市名称"
-
-    if (stream) {
-      return sseText(result)
-    }
-
-    return jsonOpenAI(
-      result,
-      requestedModel
-    )
-
-  }
-
-  const weather =
-    await getWeather(
-      city,
-      env
-    )
-
-  if (!weather) {
-
-    const result =
-      `${city}天气信息获取失败`
-
-    if (stream) {
-      return sseText(result)
-    }
-
-    return jsonOpenAI(
-      result,
-      requestedModel
-    )
-
-  }
-
-  const sunrise =
-    new Date(
-      weather.sys?.sunrise * 1000
-    ).toLocaleTimeString(
-      "zh-CN",
-      {
-        timeZone:
-          "Asia/Shanghai",
-        hour: "2-digit",
-        minute: "2-digit"
-      }
-    )
-
-  const sunset =
-    new Date(
-      weather.sys?.sunset * 1000
-    ).toLocaleTimeString(
-      "zh-CN",
-      {
-        timeZone:
-          "Asia/Shanghai",
-        hour: "2-digit",
-        minute: "2-digit"
-      }
-    )
-
-  const result =
-    `${city}天气
-
-位置：
-${weather.locationName}
-
-经纬度：
-${weather.latitude},
-${weather.longitude}
-
-天气：
-${weather.weather?.[0]?.description}
-
-当前温度：
-${weather.main?.temp}°C
-
-体感温度：
-${weather.main?.feels_like}°C
-
-湿度：
-${weather.main?.humidity}%
-
-风速：
-${weather.wind?.speed} m/s
-
-日出：
-${sunrise}
-
-日落：
-${sunset}`
-
-  if (stream) {
-
-    return sseText(
-      result
-    )
-
-  }
-
-  return jsonOpenAI(
-    result,
-    requestedModel
-  )
-
-}
-
-async function handleExchangeRate(
-  query,
-  env,
-  stream,
-  requestedModel
-) {
-
-  const currencyMap =
-    JSON.parse(
-      env.FX_CURRENCIES || "{}"
-    )
-
-  // =====================
-  // 全部汇率
-  // =====================
-
-  if (
-    /^(汇率|全部汇率|所有汇率|实时汇率)$/i
-      .test(
-        query.trim()
-      )
-  ) {
-
-    const rates =
-      await getExchangeRate(
-        "USD",
-        "*",
-        env
-      )
-
-    if (
-      !rates ||
-      typeof rates !== "object" ||
-      Object.keys(rates).length === 0
-    ) {
-
-      const result =
-        "汇率获取失败"
-
-      if (stream) {
-        return sseText(result)
-      }
-
-      return jsonOpenAI(
-        result,
-        requestedModel
-      )
-
-    }
-
-    const reverseMap =
-      Object.fromEntries(
-        Object.entries(
-          currencyMap
-        ).map(
-          ([name, code]) => [
-            code,
-            name
-          ]
-        )
-      )
-
-    const updateTime =
-      new Date()
-        .toLocaleString(
-          "zh-CN",
-          {
-            timeZone:
-              "Asia/Shanghai"
-          }
-        )
-
-    const rows =
-
-      Object.entries(rates)
-
-        .sort(
-          ([a], [b]) =>
-            a.localeCompare(b)
-        )
-
-        .map(
-          ([code, value]) => {
-
-            const cname =
-              reverseMap[code] ||
-              code
-
-            return `${cname}(${code}): ${Number(value).toFixed(6)}`
-          }
-        )
-
-    const result =
-
-      `主要货币汇率（基准 USD）
-
-${rows.join("\n")}
-
-━━━━━━━━━━━━
-共 ${Object.keys(rates).length} 种货币
-
-更新时间：
-${updateTime}`
-
-    if (stream) {
-      return sseText(result)
-    }
-
-    return jsonOpenAI(
-      result,
-      requestedModel
-    )
-
-  }
-
-  let from = null
-  let to = "CNY"
-
-  // =====================
-  // USD/CNY
-  // EUR/USD
-  // =====================
-
-  const pairMatch =
-    query.match(
-      /\b([A-Z]{3})\s*\/\s*([A-Z]{3})\b/i
-    )
-
-  if (pairMatch) {
-
-    const validCurrencies =
-      Object.values(
-        currencyMap
-      )
-
-    const fromCode =
-      pairMatch[1]
-        .toUpperCase()
-
-    const toCode =
-      pairMatch[2]
-        .toUpperCase()
-
-    if (
-
-      validCurrencies.includes(
-        fromCode
-      ) &&
-
-      validCurrencies.includes(
-        toCode
-      )
-
-    ) {
-
-      from = fromCode
-      to = toCode
-
-    }
-
-  }
-
-  // =====================
-  // 中文名称匹配
-  // =====================
-
-  if (!from) {
-
-    for (
-      const [name, code]
-      of Object.entries(
-        currencyMap
-      )
-    ) {
-
-      if (
-        query.includes(
-          name
-        )
-      ) {
-
-        from = code
-        break
-
-      }
-
-    }
-
-  }
-
-  // =====================
-  // ISO 代码匹配
-  // =====================
-
-  if (!from) {
-
-    const validCurrencies =
-      Object.values(
-        currencyMap
-      )
-
-    const codeMatches =
-      query
-        .toUpperCase()
-        .match(
-          /\b[A-Z]{3}\b/g
-        )
-
-    if (codeMatches) {
-
-      const found =
-        codeMatches.find(
-          code =>
-            validCurrencies.includes(
-              code
-            )
-        )
-
-      if (found) {
-
-        from = found
-
-      }
-
-    }
-
-  }
-
-  // =====================
-  // 未找到货币
-  // =====================
-
-  if (!from) {
-
-    const currencyList =
-      Object.entries(
-        currencyMap
-      )
-        .map(
-          ([name, code]) =>
-            `${name} ${code}`
-        )
-        .join("\n")
-
-    const result =
-
-      `支持查询的货币：
-
-${currencyList}
-
-示例：
-
-美元汇率
-欧元汇率
-日元汇率
-
-USD/CNY
-EUR/USD
-GBP/CNY
-
-输入：
-汇率
-全部汇率
-所有汇率
-
-可查看全部货币汇率`
-
-    if (stream) {
-      return sseText(result)
-    }
-
-    return jsonOpenAI(
-      result,
-      requestedModel
-    )
-
-  }
-
-  const rate =
-    await getExchangeRate(
-      from,
-      to,
-      env
-    )
-
-  if (
-    rate === null ||
-    rate === undefined
-  ) {
-
-    const result =
-      `${from}/${to} 汇率获取失败`
-
-    if (stream) {
-      return sseText(result)
-    }
-
-    return jsonOpenAI(
-      result,
-      requestedModel
-    )
-
-  }
-
-  const reverseMap =
-    Object.fromEntries(
-      Object.entries(
-        currencyMap
-      ).map(
-        ([k, v]) => [
-          v,
-          k
-        ]
-      )
-    )
-
-  const updateTime =
-    new Date()
-      .toLocaleString(
-        "zh-CN",
-        {
-          timeZone:
-            "Asia/Shanghai"
-        }
-      )
-
-  const result =
-
-    `${reverseMap[from] || from}汇率
-
-货币对：
-${from}/${to}
-
-最新汇率：
-${Number(rate).toFixed(6)}
-
-更新时间：
-${updateTime}`
-
-  if (stream) {
-    return sseText(result)
-  }
-
-  return jsonOpenAI(
-    result,
-    requestedModel
-  )
-
-}
-
-async function handleCrypto(
-  query,
-  env,
-  stream,
-  requestedModel
-) {
-
-  const cryptoMap =
-    JSON.parse(
-      env.CRYPTO_SYMBOLS || "{}"
-    )
-
-  let symbol = null
-
-  // 支持中文币名和英文代码
-
-  for (
-    const [name, code]
-    of Object.entries(
-      cryptoMap
-    )
-  ) {
-
-    // 中文名称
-
-    if (
-      /[\u4e00-\u9fa5]/.test(name)
-    ) {
-
-      if (
-        query.includes(name)
-      ) {
-
-        symbol = code
-        break
-
-      }
-
-      continue
-
-    }
-
-    // 英文代码
-
-    const regex =
-      new RegExp(
-        `\\b${name}\\b`,
-        "i"
-      )
-
-    if (
-      regex.test(query)
-    ) {
-
-      symbol = code
-      break
-
-    }
-
-  }
-
-  if (!symbol) {
-
-    return null
-
-  }
-
-  const price =
-    await getCryptoPrice(
-      symbol,
-      env
-    )
-
-  if (
-
-    price === null ||
-
-    price === undefined
-
-  ) {
-
-    return null
-
-  }
-
-  const updateTime =
-    new Date()
-      .toLocaleString(
-        "zh-CN",
-        {
-          timeZone:
-            "Asia/Shanghai"
-        }
-      )
-
-  const reverseMap =
-    Object.fromEntries(
-
-      Object.entries(
-        cryptoMap
-      ).map(
-        ([k, v]) => [v, k]
-      )
-
-    )
-
-  const result =
-    `${symbol}
-
-当前价格：
-
-${price} USDT
-
-更新时间：
-
-${updateTime}`
-
-  if (stream) {
-
-    return sseText(
-      result
-    )
-
-  }
-
-  return jsonOpenAI(
-    result,
-    requestedModel
-  )
 
 }
 
@@ -8066,172 +7956,243 @@ ${calendar.ji?.length
 // Query Helpers
 // =====================
 
-function isWeatherQuery(
-  query
-) {
-
-  return /天气|weather|气候|气温|温度|下雨|预报/i
-    .test(query)
-
-}
-
-function isExchangeRateQuery(
+function isStockQuery(
   query,
-  env
+  env = {}
 ) {
-
-  // 股票优先
 
   if (
-    /股价|股票|行情/i.test(query)
+    isChatQuery(
+      query,
+      env
+    )
   ) {
-
-    return false
-
+    return false;
   }
 
   const cryptoMap =
     JSON.parse(
       env.CRYPTO_SYMBOLS || "{}"
-    )
+    );
 
   const cryptoCodes =
     Object.values(
       cryptoMap
+    ).map(v =>
+      String(v).toUpperCase()
+    );
+
+  const stockKeywords =
+    String(
+      env.STOCK_KEYWORDS || ""
     )
+      .split(",")
+      .map(v => v.trim())
+      .filter(Boolean);
+
+  const rawQuery =
+    String(query || "")
+      .trim();
+
+  const symbol =
+    rawQuery.toUpperCase();
+
+  const hasStockKeyword =
+    stockKeywords.some(
+      keyword =>
+        rawQuery
+          .toLowerCase()
+          .includes(
+            keyword.toLowerCase()
+          )
+    );
+
+  const isTickerLike =
+    /^[A-Z]{1,5}$/.test(
+      symbol
+    )
+    &&
+    symbol.length >= 2
+    &&
+    symbol.length <= 5;
+
+  return (
+
+    hasStockKeyword
+
+    ||
+
+    (
+      isTickerLike &&
+      !cryptoCodes.includes(
+        symbol
+      )
+    )
+
+  );
+
+}
+
+function isCryptoQuery(
+  query,
+  env = {}
+) {
 
   if (
-    cryptoCodes.includes(
-      query.trim()
-        .toUpperCase()
+    isChatQuery(
+      query,
+      env
     )
   ) {
+    return false;
+  }
 
-    return false
+  if (
+    isStockQuery(
+      query,
+      env
+    )
+  ) {
+    return false;
+  }
 
+  const cryptoMap =
+    JSON.parse(
+      env.CRYPTO_SYMBOLS || "{}"
+    );
+
+  return Object.entries(
+    cryptoMap
+  ).some(
+    ([name, symbol]) => {
+
+      if (
+        /[\u4e00-\u9fa5]/.test(
+          name
+        )
+      ) {
+
+        if (
+          query.includes(
+            name
+          )
+        ) {
+          return true;
+        }
+
+      }
+
+      const symbolRegex =
+        new RegExp(
+          `\\b${String(
+            symbol
+          ).toUpperCase()}\\b`,
+          "i"
+        );
+
+      return symbolRegex.test(
+        query
+      );
+
+    }
+  );
+
+}
+
+function isExchangeRateQuery(
+  query,
+  env = {}
+) {
+
+  if (
+    isChatQuery(
+      query,
+      env
+    )
+  ) {
+    return false;
   }
 
   const currencyMap =
     JSON.parse(
       env.FX_CURRENCIES || "{}"
-    )
+    );
 
   const keywordMatch =
-    Object.keys(currencyMap)
-      .some(
-        name =>
-          query.includes(name)
-      )
+    Object.keys(
+      currencyMap
+    ).some(
+      name =>
+        query.includes(
+          name
+        )
+    );
 
   const rateMatch =
-    /汇率/i.test(query)
+    /汇率/i.test(
+      query
+    );
 
   const currencyCodes =
     Object.values(
       currencyMap
-    )
+    );
 
   const upper =
-    query.toUpperCase()
+    query.toUpperCase();
 
   const codeMatch =
     currencyCodes.some(
       code =>
         new RegExp(
           `\\b${code}\\b`
-        ).test(upper)
-    )
+        ).test(
+          upper
+        )
+    );
 
-  const result =
-
-    keywordMatch ||
-
-    rateMatch ||
-
+  return (
+    keywordMatch
+    ||
+    rateMatch
+    ||
     codeMatch
-
-  return result
+  );
 
 }
 
-function isCryptoQuery(
+function isWeatherQuery(
   query,
-  env
+  env = {}
 ) {
 
-  const cryptoMap =
-    JSON.parse(
-      env.CRYPTO_SYMBOLS || "{}"
-    )
-
-  const matchesCrypto =
-
-    Object.entries(
-      cryptoMap
-    ).some(
-      ([name, symbol]) => {
-
-        // 中文名称
-        if (
-          /[\u4e00-\u9fa5]/.test(name)
-        ) {
-
-          if (
-            query.includes(name)
-          ) {
-
-            return true
-
-          }
-
-        }
-
-        // 英文简称
-        const symbolRegex =
-          new RegExp(
-            `\\b${symbol}\\b`,
-            "i"
-          )
-
-        if (
-          symbolRegex.test(query)
-        ) {
-
-          return true
-
-        }
-
-        return false
-
-      }
-    )
-
-  // 股票相关关键词优先走股票分支
   if (
-    /股价|股票|行情/i.test(query)
+    isChatQuery(
+      query,
+      env
+    )
   ) {
-
-    return matchesCrypto
-
+    return false;
   }
 
-  // 新闻类
-  if (
-    /新闻|资讯|动态/i.test(query)
-  ) {
-
-    return matchesCrypto
-
-  }
-
-  return matchesCrypto
+  return /天气|weather|气候|气温|温度|下雨|预报/i
+    .test(query);
 
 }
 
 function isDateTimeQuery(
   query,
-  env
+  env = {}
 ) {
+
+  if (
+    isChatQuery(
+      query,
+      env
+    )
+  ) {
+    return false;
+  }
 
   const text =
     String(query || "")
@@ -8250,52 +8211,87 @@ function isDateTimeQuery(
 
   const patterns =
     getPatterns(
-      env.DATE_TIME_KEYWORDS
+      env?.DATE_TIME_KEYWORDS || ""
     );
 
   const dateOnlyPatterns =
     getPatterns(
-      env.DATE_ONLY_KEYWORDS
+      env?.DATE_ONLY_KEYWORDS || ""
     );
 
   return (
+
     patterns.some(
-      p => text.includes(p)
-    ) ||
+      p =>
+        text.includes(p)
+    )
+
+    ||
+
     dateOnlyPatterns.includes(
       text
     )
+
   );
+
 }
 
-function isChatQuery(query, env) {
-  const patterns = getPatterns(
-    env.CHAT_PATTERNS
-  )
+function isChatQuery(
+  query,
+  env = {}
+) {
 
-  const text = String(query || "")
-    .toLowerCase()
+  const patterns =
+    getPatterns(
+      env?.CHAT_PATTERNS || ""
+    );
 
-  return patterns.some(p =>
-    text.includes(
-      p.toLowerCase()
-    )
-  )
+  const text =
+    String(query || "")
+      .trim()
+      .toLowerCase();
+
+  if (!text) {
+    return false;
+  }
+
+  return patterns.some(
+    p =>
+      text.includes(
+        String(p)
+          .toLowerCase()
+      )
+  );
+
 }
 
-function isCodingQuery(query, env) {
-  const patterns = getPatterns(
-    env.CODING_PATTERNS
-  )
+function isCodingQuery(
+  query,
+  env = {}
+) {
 
-  const text = String(query || "")
-    .toLowerCase()
+  const patterns =
+    getPatterns(
+      env?.CODING_PATTERNS || ""
+    );
 
-  return patterns.some(p =>
-    text.includes(
-      p.toLowerCase()
-    )
-  )
+  const text =
+    String(query || "")
+      .trim()
+      .toLowerCase();
+
+  if (!text) {
+    return false;
+  }
+
+  return patterns.some(
+    p =>
+      text.includes(
+        String(p)
+          .toLowerCase()
+      )
+  );
+
 }
 
 // =====================
